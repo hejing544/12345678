@@ -1,138 +1,117 @@
 # -*- coding: utf-8 -*-
+"""注册窗口 UI 模块"""
 import tkinter as tk
 from tkinter import messagebox
-from user_db import user_exists, add_user
+
+from config import (
+    REGISTER_W, REGISTER_H,
+    HEADER_COLOR, BG_COLOR, BTN_COLOR, BTN_ACTIVE,
+    INPUT_HIGHLIGHT, INPUT_BORDER, TEXT_GRAY,
+    FONT_TITLE, FONT_SMALL, FONT_NORMAL, FONT_BTN,
+)
+from user_db import account_exists, create_user
+
 
 class RegisterWindow:
-    def __init__(self, parent):
-        self.parent = parent
-        self.window = tk.Toplevel(parent)
-        self.window.title('QQ注册')
-        self.width = 400
-        self.height = 500
-        self._center_window(self.width, self.height)
-        self.window.resizable(False, False)
-        self.window.transient(parent)
-        self.window.grab_set()
-        
-        self.bg_color = '#F5F6FA'
-        self.header_color = '#12B7F5'
-        self.btn_color = '#12B7F5'
-        self.btn_active = '#0E9BD6'
-        
-        self._build_ui()
-    
+    def __init__(self, parent_root):
+        try:
+            self.top = tk.Toplevel(parent_root)
+            self.parent = parent_root
+            self.top.title("注册QQ账号")
+            self.top.resizable(False, False)
+            self._center_window(REGISTER_W, REGISTER_H)
+            self.top.transient(parent_root)
+            self.top.grab_set()
+            self.reg_account_var = tk.StringVar()
+            self.reg_nickname_var = tk.StringVar()
+            self.reg_password_var = tk.StringVar()
+            self.reg_confirm_var = tk.StringVar()
+            self._build_header()
+            self._build_form()
+            self._build_register_btn()
+        except Exception as e:
+            messagebox.showerror("窗口异常", f"注册窗口初始化失败：{str(e)}")
+
     def _center_window(self, w, h):
-        screen_w = self.window.winfo_screenwidth()
-        screen_h = self.window.winfo_screenheight()
+        screen_w = self.top.winfo_screenwidth()
+        screen_h = self.top.winfo_screenheight()
         x = (screen_w - w) // 2
         y = (screen_h - h) // 2
-        self.window.geometry(f'{w}x{h}+{x}+{y}')
-    
-    def _build_ui(self):
-        # 头部
-        header = tk.Frame(self.window, bg=self.header_color, height=120)
-        header.pack(fill='x')
+        self.top.geometry(f"{w}x{h}+{x}+{y}")
+
+    def _build_header(self):
+        header = tk.Frame(self.top, bg=HEADER_COLOR, height=100)
+        header.pack(fill="x")
         header.pack_propagate(False)
-        
-        close_btn = tk.Label(header, text='X', fg='white', bg=self.header_color, 
-                           font=('Microsoft YaHei', 12, 'bold'), cursor='hand2')
-        close_btn.place(x=370, y=8)
-        close_btn.bind('<Button-1>', lambda e: self.window.destroy())
-        
-        title = tk.Label(header, text='QQ注册', fg='white', bg=self.header_color,
-                        font=('Microsoft YaHei', 20, 'bold'))
-        title.place(x=20, y=20)
-        
-        subtitle = tk.Label(header, text='创建您的QQ账号', fg='#E8F7FF', bg=self.header_color,
-                           font=('Microsoft YaHei', 10))
-        subtitle.place(x=22, y=60)
-        
-        # 输入区域
-        input_frame = tk.Frame(self.window, bg=self.bg_color)
-        input_frame.pack(fill='x', padx=40, pady=20)
-        
-        # 账号
-        tk.Label(input_frame, text='账号', bg=self.bg_color, fg='#666666',
-                font=('Microsoft YaHei', 9)).pack(anchor='w')
-        self.account_var = tk.StringVar()
-        account_entry = tk.Entry(input_frame, textvariable=self.account_var,
-                               font=('Microsoft YaHei', 11), relief='flat', bd=0,
-                               highlightthickness=1, highlightcolor=self.header_color,
-                               highlightbackground='#DDDDDD')
-        account_entry.pack(fill='x', ipady=6, pady=(2, 12))
-        
-        # 昵称
-        tk.Label(input_frame, text='昵称', bg=self.bg_color, fg='#666666',
-                font=('Microsoft YaHei', 9)).pack(anchor='w')
-        self.nickname_var = tk.StringVar()
-        nickname_entry = tk.Entry(input_frame, textvariable=self.nickname_var,
-                                font=('Microsoft YaHei', 11), relief='flat', bd=0,
-                                highlightthickness=1, highlightcolor=self.header_color,
-                                highlightbackground='#DDDDDD')
-        nickname_entry.pack(fill='x', ipady=6, pady=(2, 12))
-        
-        # 密码
-        tk.Label(input_frame, text='密码', bg=self.bg_color, fg='#666666',
-                font=('Microsoft YaHei', 9)).pack(anchor='w')
-        self.password_var = tk.StringVar()
-        password_entry = tk.Entry(input_frame, textvariable=self.password_var, show='*',
-                                font=('Microsoft YaHei', 11), relief='flat', bd=0,
-                                highlightthickness=1, highlightcolor=self.header_color,
-                                highlightbackground='#DDDDDD')
-        password_entry.pack(fill='x', ipady=6, pady=(2, 12))
-        
-        # 确认密码
-        tk.Label(input_frame, text='确认密码', bg=self.bg_color, fg='#666666',
-                font=('Microsoft YaHei', 9)).pack(anchor='w')
-        self.confirm_var = tk.StringVar()
-        confirm_entry = tk.Entry(input_frame, textvariable=self.confirm_var, show='*',
-                               font=('Microsoft YaHei', 11), relief='flat', bd=0,
-                               highlightthickness=1, highlightcolor=self.header_color,
-                               highlightbackground='#DDDDDD')
-        confirm_entry.pack(fill='x', ipady=6, pady=(2, 0))
-        confirm_entry.bind('<Return>', lambda e: self._on_register())
-        
-        # 注册按钮
-        register_btn = tk.Button(self.window, text='注 册', command=self._on_register,
-                               bg=self.btn_color, fg='white',
-                               activebackground=self.btn_active, activeforeground='white',
-                               font=('Microsoft YaHei', 12, 'bold'), relief='flat',
-                               cursor='hand2', bd=0)
-        register_btn.pack(fill='x', padx=40, ipady=8, pady=10)
-        
-        # 返回登录
-        back_label = tk.Label(self.window, text='返回登录', fg=self.header_color,
-                            bg=self.bg_color, font=('Microsoft YaHei', 9),
-                            cursor='hand2')
-        back_label.pack(pady=10)
-        back_label.bind('<Button-1>', lambda e: self.window.destroy())
-    
+        tk.Label(header, text="注册QQ账号", fg="white", bg=HEADER_COLOR, font=FONT_TITLE).pack(pady=30)
+
+    def _create_input_row(self, parent_frame, label_text, var, show=""):
+        row = tk.Frame(parent_frame, bg=BG_COLOR)
+        row.pack(fill="x", pady=(0, 10))
+        tk.Label(row, text=label_text, bg=BG_COLOR, fg=TEXT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        entry = tk.Entry(
+            row, textvariable=var, show=show, font=FONT_NORMAL,
+            relief="flat", bd=0, highlightthickness=1,
+            highlightcolor=INPUT_HIGHLIGHT, highlightbackground=INPUT_BORDER
+        )
+        entry.pack(fill="x", ipady=6, pady=(2, 0))
+
+    def _build_form(self):
+        form = tk.Frame(self.top, bg=BG_COLOR)
+        form.pack(fill="x", padx=40, pady=(15, 10))
+        self._create_input_row(form, "账号", self.reg_account_var)
+        self._create_input_row(form, "昵称", self.reg_nickname_var)
+        self._create_input_row(form, "密码（6-16位）", self.reg_password_var, show="●")
+        confirm_frame = tk.Frame(form, bg=BG_COLOR)
+        confirm_frame.pack(fill="x")
+        tk.Label(confirm_frame, text="确认密码", bg=BG_COLOR, fg=TEXT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        confirm_entry = tk.Entry(
+            confirm_frame, textvariable=self.reg_confirm_var, show="●", font=FONT_NORMAL,
+            relief="flat", bd=0, highlightthickness=1,
+            highlightcolor=INPUT_HIGHLIGHT, highlightbackground=INPUT_BORDER
+        )
+        confirm_entry.pack(fill="x", ipady=6, pady=(2, 0))
+        confirm_entry.bind("<Return>", lambda e: self._on_register())
+
+    def _build_register_btn(self):
+        tk.Button(
+            self.top, text="立即注册", command=self._on_register,
+            bg=BTN_COLOR, fg="white", activebackground=BTN_ACTIVE, activeforeground="white",
+            font=FONT_BTN, relief="flat", cursor="hand2", bd=0
+        ).pack(fill="x", padx=40, ipady=8, pady=(5, 0))
+
     def _on_register(self):
-        account = self.account_var.get().strip()
-        nickname = self.nickname_var.get().strip()
-        password = self.password_var.get().strip()
-        confirm = self.confirm_var.get().strip()
-        
-        if not account:
-            messagebox.showwarning('提示', '请输入账号！')
-            return
-        if not nickname:
-            messagebox.showwarning('提示', '请输入昵称！')
-            return
-        if not password:
-            messagebox.showwarning('提示', '请输入密码！')
-            return
-        if not confirm:
-            messagebox.showwarning('提示', '请确认密码！')
-            return
-        if password != confirm:
-            messagebox.showwarning('提示', '两次密码输入不一致！')
-            return
-        if user_exists(account):
-            messagebox.showwarning('提示', '该账号已存在！')
-            return
-        
-        add_user(account, password, nickname)
-        messagebox.showinfo('注册成功', f'注册成功！\n账号：{account}\n昵称：{nickname}')
-        self.window.destroy()
+        try:
+            account = self.reg_account_var.get().strip()
+            nickname = self.reg_nickname_var.get().strip()
+            pwd = self.reg_password_var.get().strip()
+            confirm_pwd = self.reg_confirm_var.get().strip()
+            if not account:
+                messagebox.showwarning("提示", "请输入账号！", parent=self.top)
+                return
+            if not nickname:
+                messagebox.showwarning("提示", "请输入昵称！", parent=self.top)
+                return
+            if not pwd:
+                messagebox.showwarning("提示", "请输入密码！", parent=self.top)
+                return
+            if not confirm_pwd:
+                messagebox.showwarning("提示", "请再次输入密码！", parent=self.top)
+                return
+            if not account.isalnum() or not (3 <= len(account) <= 16):
+                messagebox.showwarning("格式错误", "账号仅支持字母/数字，长度3~16位", parent=self.top)
+                return
+            if not (6 <= len(pwd) <= 16):
+                messagebox.showwarning("格式错误", "密码长度必须6~16位", parent=self.top)
+                return
+            if pwd != confirm_pwd:
+                messagebox.showerror("错误", "两次输入密码不一致", parent=self.top)
+                return
+            if account_exists(account):
+                messagebox.showerror("错误", f"账号 {account} 已被注册", parent=self.top)
+                return
+            create_user(account, nickname, pwd)
+            messagebox.showinfo("注册成功", f"账号 {account} 注册完成，可返回登录！", parent=self.top)
+            self.top.destroy()
+        except Exception as err:
+            messagebox.showerror("注册失败", f"程序异常：{str(err)}", parent=self.top)

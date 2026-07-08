@@ -1,99 +1,145 @@
 # -*- coding: utf-8 -*-
+"""登录窗口 UI 模块"""
 import tkinter as tk
 from tkinter import messagebox
-from user_db import verify_user
+
+from config import (
+    LOGIN_W, LOGIN_H,
+    HEADER_COLOR, BG_COLOR, BTN_COLOR, BTN_ACTIVE,
+    INPUT_HIGHLIGHT, INPUT_BORDER, TEXT_GRAY,
+    FONT_SMALL, FONT_SUBTITLE, FONT_NORMAL, FONT_BTN, FONT_EMOJI,
+)
+from user_db import get_user_info, verify_password
 from register_window import RegisterWindow
 from chat_window import MainWindow
+
+
 class QQLoginWindow:
     def __init__(self, root):
-        self.root = root
-        self.root.title('QQ登录')
-        self.width = 380
-        self.height = 540
-        self._center_window(self.width, self.height)
-        self.root.resizable(False, False)
-        self.bg_color = '#F5F6FA'
-        self.header_color = '#12B7F5'
-        self.btn_color = '#12B7F5'
-        self.btn_active = '#0E9BD6'
-        self._build_header()
-        self._build_avatar()
-        self._build_input_area()
-        self._build_options_area()
-        self._build_login_button()
-        self._build_footer()
+        try:
+            self.root = root
+            self.root.title("QQ登录")
+            self.root.resizable(False, False)
+            self._center_window(LOGIN_W, LOGIN_H)
+            self.account_var = tk.StringVar()
+            self.password_var = tk.StringVar()
+            self.remember_var = tk.IntVar(value=1)
+            self.auto_login_var = tk.IntVar(value=0)
+            self._build_header()
+            self._build_avatar()
+            self._build_input_area()
+            self._build_option_area()
+            self._build_login_btn()
+            self._build_footer()
+        except Exception as e:
+            messagebox.showerror("启动异常", f"登录窗口初始化失败：{str(e)}")
+
     def _center_window(self, w, h):
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
         x = (screen_w - w) // 2
         y = (screen_h - h) // 2
-        self.root.geometry(f'{w}x{h}+{x}+{y}')
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+
     def _build_header(self):
-        header = tk.Frame(self.root, bg=self.header_color, height=140)
-        header.pack(fill='x')
+        header = tk.Frame(self.root, bg=HEADER_COLOR, height=140)
+        header.pack(fill="x")
         header.pack_propagate(False)
-        close_btn = tk.Label(header, text='X', fg='white', bg=self.header_color, font=('Microsoft YaHei', 12, 'bold'), cursor='hand2')
+        close_btn = tk.Label(header, text="✕", fg="white", bg=HEADER_COLOR,
+                             font=FONT_SMALL, cursor="hand2")
         close_btn.place(x=350, y=8)
-        close_btn.bind('<Button-1>', lambda e: self.root.quit())
-        title = tk.Label(header, text='QQ', fg='white', bg=self.header_color, font=('Microsoft YaHei', 22, 'bold'))
-        title.place(x=20, y=20)
-        subtitle = tk.Label(header, text='每一天，乐在沟通', fg='#E8F7FF', bg=self.header_color, font=('Microsoft YaHei', 10))
-        subtitle.place(x=22, y=60)
+        close_btn.bind("<Button-1>", lambda e: self.root.quit())
+        tk.Label(header, text="QQ", fg="white", bg=HEADER_COLOR,
+                 font=("Microsoft YaHei", 22, "bold")).place(x=20, y=20)
+        tk.Label(header, text="每一天，乐在沟通", fg="#E8F7FF", bg=HEADER_COLOR,
+                 font=FONT_SUBTITLE).place(x=22, y=60)
+
     def _build_avatar(self):
-        avatar_frame = tk.Frame(self.root, bg=self.bg_color, height=90)
-        avatar_frame.pack(fill='x')
+        avatar_frame = tk.Frame(self.root, bg=BG_COLOR, height=90)
+        avatar_frame.pack(fill="x")
         avatar_frame.pack_propagate(False)
-        avatar = tk.Label(avatar_frame, text='QQ', bg=self.bg_color, font=('Microsoft YaHei', 40))
-        avatar.pack(pady=15)
+        tk.Label(avatar_frame, text="🐧", bg=BG_COLOR, font=FONT_EMOJI).pack(pady=15)
+
     def _build_input_area(self):
-        input_frame = tk.Frame(self.root, bg=self.bg_color)
-        input_frame.pack(fill='x', padx=40, pady=(5, 10))
-        tk.Label(input_frame, text='账号', bg=self.bg_color, fg='#666666', font=('Microsoft YaHei', 9)).pack(anchor='w')
-        self.account_var = tk.StringVar()
-        account_entry = tk.Entry(input_frame, textvariable=self.account_var, font=('Microsoft YaHei', 11), relief='flat', bd=0, highlightthickness=1, highlightcolor=self.header_color, highlightbackground='#DDDDDD')
-        account_entry.pack(fill='x', ipady=6, pady=(2, 12))
-        tk.Label(input_frame, text='密码', bg=self.bg_color, fg='#666666', font=('Microsoft YaHei', 9)).pack(anchor='w')
-        self.password_var = tk.StringVar()
-        password_entry = tk.Entry(input_frame, textvariable=self.password_var, show='*', font=('Microsoft YaHei', 11), relief='flat', bd=0, highlightthickness=1, highlightcolor=self.header_color, highlightbackground='#DDDDDD')
-        password_entry.pack(fill='x', ipady=6, pady=(2, 0))
-        password_entry.bind('<Return>', lambda e: self._on_login())
-    def _build_options_area(self):
-        opt_frame = tk.Frame(self.root, bg=self.bg_color)
-        opt_frame.pack(fill='x', padx=40, pady=(5, 15))
-        self.remember_var = tk.IntVar(value=1)
-        self.auto_login_var = tk.IntVar(value=0)
-        tk.Checkbutton(opt_frame, text='记住密码', variable=self.remember_var, bg=self.bg_color, activebackground=self.bg_color, font=('Microsoft YaHei', 9), fg='#666666', selectcolor=self.bg_color, bd=0).pack(side='left')
-        tk.Checkbutton(opt_frame, text='自动登录', variable=self.auto_login_var, bg=self.bg_color, activebackground=self.bg_color, font=('Microsoft YaHei', 9), fg='#666666', selectcolor=self.bg_color, bd=0).pack(side='right')
-    def _build_login_button(self):
-        login_btn = tk.Button(self.root, text='登 录', command=self._on_login, bg=self.btn_color, fg='white', activebackground=self.btn_active, activeforeground='white', font=('Microsoft YaHei', 12, 'bold'), relief='flat', cursor='hand2', bd=0)
-        login_btn.pack(fill='x', padx=40, ipady=8)
+        input_frame = tk.Frame(self.root, bg=BG_COLOR)
+        input_frame.pack(fill="x", padx=40, pady=(5, 10))
+        tk.Label(input_frame, text="账号", bg=BG_COLOR, fg=TEXT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        acc_entry = tk.Entry(
+            input_frame, textvariable=self.account_var, font=FONT_NORMAL,
+            relief="flat", bd=0, highlightthickness=1,
+            highlightcolor=INPUT_HIGHLIGHT, highlightbackground=INPUT_BORDER
+        )
+        acc_entry.pack(fill="x", ipady=6, pady=(2, 12))
+        tk.Label(input_frame, text="密码", bg=BG_COLOR, fg=TEXT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        pwd_entry = tk.Entry(
+            input_frame, textvariable=self.password_var, show="●", font=FONT_NORMAL,
+            relief="flat", bd=0, highlightthickness=1,
+            highlightcolor=INPUT_HIGHLIGHT, highlightbackground=INPUT_BORDER
+        )
+        pwd_entry.pack(fill="x", ipady=6, pady=(2, 0))
+        pwd_entry.bind("<Return>", lambda e: self._login_action())
+
+    def _build_option_area(self):
+        opt_frame = tk.Frame(self.root, bg=BG_COLOR)
+        opt_frame.pack(fill="x", padx=40, pady=(5, 15))
+        tk.Checkbutton(
+            opt_frame, text="记住密码", variable=self.remember_var, bg=BG_COLOR,
+            activebackground=BG_COLOR, font=FONT_SMALL, fg=TEXT_GRAY,
+            selectcolor=BG_COLOR, bd=0
+        ).pack(side="left")
+        tk.Checkbutton(
+            opt_frame, text="自动登录", variable=self.auto_login_var, bg=BG_COLOR,
+            activebackground=BG_COLOR, font=FONT_SMALL, fg=TEXT_GRAY,
+            selectcolor=BG_COLOR, bd=0
+        ).pack(side="right")
+
+    def _build_login_btn(self):
+        tk.Button(
+            self.root, text="登 录", command=self._login_action,
+            bg=BTN_COLOR, fg="white", activebackground=BTN_ACTIVE, activeforeground="white",
+            font=FONT_BTN, relief="flat", cursor="hand2", bd=0
+        ).pack(fill="x", padx=40, ipady=8)
+
     def _build_footer(self):
-        footer = tk.Frame(self.root, bg=self.bg_color)
-        footer.pack(fill='x', padx=40, pady=15)
-        reg_label = tk.Label(footer, text='注册账号', fg=self.header_color, bg=self.bg_color, font=('Microsoft YaHei', 9), cursor='hand2')
-        reg_label.pack(side='left')
-        reg_label.bind('<Button-1>', lambda e: self._open_register())
-        forgot_label = tk.Label(footer, text='找回密码', fg=self.header_color, bg=self.bg_color, font=('Microsoft YaHei', 9), cursor='hand2')
-        forgot_label.pack(side='right')
-        forgot_label.bind('<Button-1>', lambda e: messagebox.showinfo('提示', '跳转到找回密码页面（示例）'))
-    def _on_login(self):
-        account = self.account_var.get().strip()
-        password = self.password_var.get().strip()
-        if not account:
-            messagebox.showwarning('提示', '请输入账号！')
-            return
-        if not password:
-            messagebox.showwarning('提示', '请输入密码！')
-            return
-        user_info = verify_user(account, password)
-        if user_info is not None:
-            nickname = user_info['nickname']
-            messagebox.showinfo('登录成功', f'欢迎回来，{nickname}！\n正在进入主面板...')
+        footer = tk.Frame(self.root, bg=BG_COLOR)
+        footer.pack(fill="x", padx=40, pady=15)
+        reg_label = tk.Label(footer, text="注册账号", fg=HEADER_COLOR, bg=BG_COLOR,
+                             font=FONT_SMALL, cursor="hand2")
+        reg_label.pack(side="left")
+        reg_label.bind("<Button-1>", lambda e: RegisterWindow(self.root))
+        forget_label = tk.Label(footer, text="找回密码", fg=HEADER_COLOR, bg=BG_COLOR,
+                                font=FONT_SMALL, cursor="hand2")
+        forget_label.pack(side="right")
+        forget_label.bind("<Button-1>", lambda e: messagebox.showinfo("提示", "找回密码功能待开发"))
+
+    def _login_action(self):
+        try:
+            account = self.account_var.get().strip()
+            raw_pwd = self.password_var.get().strip()
+            if not account:
+                messagebox.showwarning("输入提示", "请填写账号！")
+                return
+            if not raw_pwd:
+                messagebox.showwarning("输入提示", "请填写密码！")
+                return
+            user_data = get_user_info(account)
+            if user_data is None:
+                messagebox.showerror("登录失败", "该账号不存在，请先注册！")
+                return
+            if not verify_password(raw_pwd, user_data["hash_pwd"]):
+                messagebox.showerror("登录失败", "账号或密码错误！")
+                return
+            messagebox.showinfo("登录成功", f"欢迎 {user_data['nickname']}！正在进入主页")
             self.root.destroy()
             main_root = tk.Tk()
-            MainWindow(main_root, account, user_info)
+            MainWindow(main_root, account, user_data)
             main_root.mainloop()
-        else:
-            messagebox.showerror('登录失败', '账号或密码错误，请重新输入！')
-    def _open_register(self):
-        RegisterWindow(self.root)
+        except Exception as err:
+            messagebox.showerror("登录异常", f"程序出错：{str(err)}")
+
+
+def run_login_window():
+    """启动登录窗口（供 chat_window 退出登录时调用）"""
+    root = tk.Tk()
+    QQLoginWindow(root)
+    root.mainloop()
