@@ -70,15 +70,22 @@ DEFAULT_USERS = {
 }
 
 def load_user_db():
-    """从本地文件加载用户数据库，若文件不存在则使用默认用户"""
+    """从本地文件加载用户数据库，若文件不存在或损坏则使用默认用户"""
     if os.path.exists(USER_DB_FILE):
-        with open(USER_DB_FILE, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        db = {}
-        for account, info in raw.items():
-            info["hash_pwd"] = info["hash_pwd"].encode("utf-8")
-            db[account] = info
-        return db
+        try:
+            with open(USER_DB_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            db = {}
+            for account, info in raw.items():
+                info["hash_pwd"] = info["hash_pwd"].encode("utf-8")
+                db[account] = info
+            return db
+        except Exception:
+            # 文件损坏时删除损坏文件，使用默认用户
+            try:
+                os.remove(USER_DB_FILE)
+            except Exception:
+                pass
     return {account: dict(info) for account, info in DEFAULT_USERS.items()}
 
 def save_user_db(db):
@@ -299,10 +306,11 @@ class MainWindow:
         tk.Button(header, text="×", fg="white", bg=HEADER_COLOR, font=("Arial", 16), relief="flat",
                   command=self.root.quit).place(x=370, y=10)
 
-        # 头像卡片
+        # 头像卡片（使用保存的头像，默认 🐧）
         card = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
         card.pack(fill="x", padx=20, pady=15)
-        tk.Label(card, text="🐧", font=FONT_EMOJI, bg=CARD_BG).pack(side="left")
+        avatar_text = self.user.get("avatar", "🐧")
+        tk.Label(card, text=avatar_text, font=FONT_EMOJI, bg=CARD_BG).pack(side="left")
         info_frame = tk.Frame(card, bg=CARD_BG)
         info_frame.pack(side="left", padx=15)
         tk.Label(info_frame, text=self.user["nickname"], bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei", 16, "bold")).pack(anchor="w")
@@ -484,40 +492,44 @@ class MainWindow:
         tk.Entry(pop, textvariable=sign_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
         def save_info():
-            # 从界面获取值
-            new_avatar = avatar_var.get()
-            new_nick = nick_var.get().strip()
-            new_gender = gender_var.get()
-            new_age = age_var.get().strip()
-            new_city = city_var.get().strip()
-            new_sign = sign_var.get().strip()
+            """保存修改到内存和文件"""
+            try:
+                new_avatar = avatar_var.get()
+                new_nick = nick_var.get().strip()
+                new_gender = gender_var.get()
+                new_age = age_var.get().strip()
+                new_city = city_var.get().strip()
+                new_sign = sign_var.get().strip()
 
-            # 更新 self.user 对象
-            self.user["avatar"] = new_avatar
-            if new_nick:
-                self.user["nickname"] = new_nick
-            if new_gender:
+                # 更新 self.user 对象
+                self.user["avatar"] = new_avatar
+                if new_nick:
+                    self.user["nickname"] = new_nick
                 self.user["gender"] = new_gender
-            if new_age:
-                self.user["age"] = new_age
-            if new_city:
-                self.user["city"] = new_city
-            if new_sign:
-                self.user["signature"] = new_sign
+                if new_age:
+                    self.user["age"] = new_age
+                if new_city:
+                    self.user["city"] = new_city
+                if new_sign:
+                    self.user["signature"] = new_sign
 
-            # 同步更新全局 USER_DB 并保存到文件
-            if self.account in USER_DB:
-                USER_DB[self.account]["nickname"] = self.user["nickname"]
-                USER_DB[self.account]["gender"] = self.user["gender"]
-                USER_DB[self.account]["age"] = self.user["age"]
-                USER_DB[self.account]["city"] = self.user["city"]
-                USER_DB[self.account]["signature"] = self.user["signature"]
-                USER_DB[self.account]["avatar"] = self.user["avatar"]
+                # 同步更新全局 USER_DB 并保存到文件
+                if self.account in USER_DB:
+                    USER_DB[self.account]["nickname"] = self.user["nickname"]
+                    USER_DB[self.account]["gender"] = self.user["gender"]
+                    USER_DB[self.account]["age"] = self.user["age"]
+                    USER_DB[self.account]["city"] = self.user["city"]
+                    USER_DB[self.account]["signature"] = self.user["signature"]
+                    USER_DB[self.account]["avatar"] = self.user["avatar"]
+
+                # 无论 USER_DB 中是否存在该账号，都调用保存（新注册用户创建于同一次运行中时可能在全局字典里）
                 save_user_db(USER_DB)
 
-            messagebox.showinfo("成功", "资料修改完成！")
-            pop.destroy()
-            self.show_home_page()
+                messagebox.showinfo("成功", "资料修改完成！")
+                pop.destroy()
+                self.show_home_page()
+            except Exception as e:
+                messagebox.showerror("保存失败", f"修改资料时发生错误：{str(e)}")
 
         tk.Button(pop, text="保存修改", bg=BTN_COLOR, fg="white",
                   font=FONT_BTN, command=save_info).pack(pady=15)
