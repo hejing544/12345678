@@ -41,7 +41,9 @@ ONLINE_GREEN = "#52C41A"
 DIVIDER_GRAY = "#EEEEEE"
 
 # ====================== 用户加密工具 & 数据库 ======================
-USER_DB = {
+USER_DB_FILE = "user_db.json"
+
+DEFAULT_USERS = {
     "123456": {
         "hash_pwd": b'$2b$12$cV8xR9w0F1N8aG7tXyKzOuJdZ7bQ5sL9mN0pR6dT',
         "nickname": "小明",
@@ -68,6 +70,32 @@ USER_DB = {
     },
 }
 
+def load_user_db():
+    """从本地文件加载用户数据库，若文件不存在则使用默认用户"""
+    if os.path.exists(USER_DB_FILE):
+        with open(USER_DB_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        # 将 hash_pwd 从字符串转回 bytes
+        db = {}
+        for account, info in raw.items():
+            info["hash_pwd"] = info["hash_pwd"].encode("utf-8")
+            db[account] = info
+        return db
+    return {account: dict(info) for account, info in DEFAULT_USERS.items()}
+
+def save_user_db(db):
+    """将用户数据库保存到本地文件"""
+    to_save = {}
+    for account, info in db.items():
+        saved = dict(info)
+        saved["hash_pwd"] = saved["hash_pwd"].decode("utf-8")
+        to_save[account] = saved
+    with open(USER_DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(to_save, f, ensure_ascii=False, indent=2)
+
+# 启动时加载用户数据库
+USER_DB = load_user_db()
+
 def hash_password(raw_pwd: str) -> bytes:
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(raw_pwd.encode("utf-8"), salt)
@@ -88,6 +116,7 @@ def create_new_user(account: str, nickname: str, raw_pwd: str):
         "age": "未知",
         "city": "未知",
     }
+    save_user_db(USER_DB)
 
 def get_user_info(account: str):
     return USER_DB.get(account, None)
