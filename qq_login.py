@@ -20,8 +20,8 @@ LOGIN_W = 380
 LOGIN_H = 540
 REGISTER_W = 360
 REGISTER_H = 480
-MAIN_W = 420
-MAIN_H = 620
+MAIN_W = 600
+MAIN_H = 900
 
 FONT_TITLE = ("Microsoft YaHei", 18, "bold")
 FONT_SUBTITLE = ("Microsoft YaHei", 10)
