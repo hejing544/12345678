@@ -51,6 +51,7 @@ DEFAULT_USERS = {
         "gender": "男",
         "age": "22",
         "city": "深圳",
+        "mood": "😊开心",
     },
     "admin": {
         "hash_pwd": b'$2b$12$dE9sK2pQ7zR5aT8xYbN0cJdF3gH6lM4vW1eS9',
@@ -59,6 +60,7 @@ DEFAULT_USERS = {
         "gender": "男",
         "age": "25",
         "city": "北京",
+        "mood": "😊开心",
     },
     "qquser": {
         "hash_pwd": b'$2b$12$fR3gT7vB9nD2zP5sC8kX0jL6hM1wQ4aE7dS2',
@@ -67,6 +69,7 @@ DEFAULT_USERS = {
         "gender": "女",
         "age": "20",
         "city": "上海",
+        "mood": "😊开心",
     },
 }
 
@@ -131,7 +134,8 @@ def create_new_user(account: str, nickname: str, raw_pwd: str):
         "gender": "保密",
         "age": "未知",
         "city": "未知",
-        "level_stars": 0,  # 累计在线分钟数（星星数）
+        "level_stars": 0,
+        "mood": "😊开心",
     }
     save_user_db(USER_DB)
 
@@ -421,7 +425,14 @@ class MainWindow:
         tk.Label(card, text=avatar_text, font=FONT_EMOJI, bg=CARD_BG).pack(side="left")
         info_frame = tk.Frame(card, bg=CARD_BG)
         info_frame.pack(side="left", padx=15)
-        tk.Label(info_frame, text=self.user["nickname"], bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei", 16, "bold")).pack(anchor="w")
+        top_info_row = tk.Frame(info_frame, bg=CARD_BG)
+        top_info_row.pack(anchor="w", fill="x")
+        tk.Label(top_info_row, text=self.user["nickname"], bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei", 16, "bold")).pack(side="left")
+        # 心情状态显示
+        mood_val = self.user.get("mood", "😊开心")
+        self.mood_label = tk.Label(top_info_row, text=mood_val, bg=CARD_BG, font=("Segoe UI Emoji", 14), cursor="hand2")
+        self.mood_label.pack(side="left", padx=(8, 0))
+        self.mood_label.bind("<Button-1>", lambda e: self._change_mood_popup())
         tk.Label(info_frame, text=f"签名：{self.user['signature']}", bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=5)
         tk.Label(info_frame, text="● 在线", bg=CARD_BG, fg=ONLINE_GREEN, font=FONT_SMALL).pack(anchor="w")
 
@@ -873,6 +884,41 @@ class MainWindow:
             label.pack(padx=10, pady=10)
         except Exception as e:
             messagebox.showerror("错误", f"无法打开图片：{str(e)}")
+
+    # ==================== 心情状态切换 ====================
+
+    def _change_mood_popup(self):
+        """弹出心情选择窗口"""
+        pop = tk.Toplevel(self.root)
+        pop.title("设置心情状态")
+        pop.geometry("300x200")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text="选择你的心情状态：", font=FONT_NORMAL).pack(pady=(20, 10))
+
+        moods = [
+            ("😊开心", "😊开心"),
+            ("😢伤心", "😢伤心"),
+            ("😐平静", "😐平静"),
+        ]
+
+        def set_mood(mood_val):
+            """设置心情并保存"""
+            self.user["mood"] = mood_val
+            self.mood_label.config(text=mood_val)
+            if self.account in USER_DB:
+                USER_DB[self.account]["mood"] = mood_val
+                save_user_db(USER_DB)
+            pop.destroy()
+
+        for display, value in moods:
+            tk.Button(
+                pop, text=display, font=("Segoe UI Emoji", 16),
+                bg=CARD_BG, relief="flat", anchor="w", padx=20,
+                command=lambda v=value: set_mood(v)
+            ).pack(fill="x", padx=30, pady=3)
 
     # ==================== QQ等级系统 ====================
 
