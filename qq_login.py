@@ -95,9 +95,19 @@ def save_user_db(db):
     for account, info in db.items():
         saved = dict(info)
         saved["hash_pwd"] = saved["hash_pwd"].decode("utf-8")
+        # 确保 level_stars 字段存在
+        if "level_stars" not in saved:
+            saved["level_stars"] = 0
         to_save[account] = saved
     with open(USER_DB_FILE, "w", encoding="utf-8") as f:
         json.dump(to_save, f, ensure_ascii=False, indent=2)
+
+
+def save_level_stars(account: str, stars: int):
+    """保存用户的QQ等级星星数"""
+    if account in USER_DB:
+        USER_DB[account]["level_stars"] = stars
+        save_user_db(USER_DB)
 
 # 启动时加载用户数据库
 USER_DB = load_user_db()
@@ -121,6 +131,7 @@ def create_new_user(account: str, nickname: str, raw_pwd: str):
         "gender": "保密",
         "age": "未知",
         "city": "未知",
+        "level_stars": 0,  # 累计在线分钟数（星星数）
     }
     save_user_db(USER_DB)
 
@@ -354,6 +365,11 @@ class MainWindow:
             self.friend_list = ["小明", "管理员", "QQ用户"]
             self.current_chat_target = None
 
+            # QQ等级系统：每60秒自动加一颗星星
+            self.level_stars = self.user.get("level_stars", 0)
+            self.level_timer_id = None
+            self._start_level_timer()
+
             # 左侧侧边栏
             self.side_frame = tk.Frame(self.root, bg="#2C3E50", width=120)
             self.side_frame.pack(side="left", fill="y")
@@ -413,13 +429,15 @@ class MainWindow:
         detail = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
         detail.pack(fill="x", padx=20)
         tk.Label(detail, text="个人信息", bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
+        display_text, total_stars = self.get_level_stars_display()
         info_list = [
             ("账    号", self.account),
             ("昵    称", self.user["nickname"]),
             ("性    别", self.user["gender"]),
             ("年    龄", self.user["age"]),
             ("城    市", self.user["city"]),
-            ("个性签名", self.user["signature"])
+            ("个性签名", self.user["signature"]),
+            ("QQ等级", display_text)
         ]
         for label, val in info_list:
             row = tk.Frame(detail, bg=CARD_BG)
@@ -856,9 +874,47 @@ class MainWindow:
         except Exception as e:
             messagebox.showerror("错误", f"无法打开图片：{str(e)}")
 
+    # ==================== QQ等级系统 ====================
+
+    def _start_level_timer(self):
+        """启动等级计时器（每60秒加一颗星）"""
+        self._add_star()
+        self.level_timer_id = self.root.after(60000, self._start_level_timer)
+
+    def _add_star(self):
+        """增加一颗星星并保存"""
+        self.level_stars += 1
+        self.user["level_stars"] = self.level_stars
+        save_level_stars(self.account, self.level_stars)
+
+    def _stop_level_timer(self):
+        """退出前停止计时器"""
+        if self.level_timer_id:
+            self.root.after_cancel(self.level_timer_id)
+            self.level_timer_id = None
+        # 退出时再保存一次确保数据最新
+        save_level_stars(self.account, self.level_stars)
+
+    def get_level_stars_display(self):
+        """根据星星数生成等级显示文本和图标"""
+        stars = self.level_stars
+        # 4颗星=1个月亮，4个月亮=1个太阳
+        suns = stars // 64
+        moons = (stars % 64) // 16
+        star_count = stars % 16
+        parts = []
+        if suns:
+            parts.append(f"☀️×{suns}")
+        if moons:
+            parts.append(f"🌙×{moons}")
+        if star_count or not parts:
+            parts.append(f"⭐×{star_count if parts else stars}")
+        return "  ".join(parts), stars
+
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
         if confirm:
+            self._stop_level_timer()
             self.root.destroy()
             run_login_window()
 
