@@ -12,6 +12,10 @@ from calendar import monthrange
 from shutil import copy2
 from checkin_db import get_checkin_status, do_checkin, get_month_records
 from chat_db import send_message, load_conversation
+from friends_db import (
+    get_friend_list, get_pending_requests, send_friend_request,
+    accept_friend_request, reject_friend_request, remove_friend, search_users
+)
 
 # ====================== 全局配置 ======================
 HEADER_COLOR = "#12B7F5"
@@ -455,16 +459,44 @@ class MainWindow:
 
         left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=140)
         left_box.pack(side="left", fill="y")
-        tk.Label(left_box, text="在线用户", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=10)
+        tk.Label(left_box, text="我的好友", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=5)
+
+        btn_frame = tk.Frame(left_box, bg="#EEEEEE")
+        btn_frame.pack(fill="x", padx=5, pady=2)
+        tk.Button(btn_frame, text="➕ 添加好友", bg=BG_COLOR, relief="flat",
+                  font=FONT_SMALL, command=self._show_add_friend_popup).pack(fill="x")
+        tk.Button(btn_frame, text="📩 好友请求", bg=BG_COLOR, relief="flat",
+                  font=FONT_SMALL, command=self._show_pending_requests).pack(fill="x", pady=(2,0))
+
         self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
         self.chat_listbox.pack(fill="both", expand=True, padx=5, pady=5)
 
         self.friend_accounts = []
-        for acc in USER_DB:
-            if acc != self.account:
-                nick = USER_DB[acc].get("nickname", acc)
-                self.chat_listbox.insert(tk.END, f"{acc} - {nick}")
-                self.friend_accounts.append(acc)
+        self._refresh_friend_list()
+
+        self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
+
+        chat_area = tk.Frame(self.main_container, bg="white")
+        """聊天页面 - 跨账号互发消息"""
+        self.current_page = "chat"
+        self.clear_main_container()
+
+        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=140)
+        left_box.pack(side="left", fill="y")
+        tk.Label(left_box, text="我的好友", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=5)
+
+        btn_frame = tk.Frame(left_box, bg="#EEEEEE")
+        btn_frame.pack(fill="x", padx=5, pady=2)
+        tk.Button(btn_frame, text="➕ 添加好友", bg=BG_COLOR, relief="flat",
+                  font=FONT_SMALL, command=self._show_add_friend_popup).pack(fill="x")
+        tk.Button(btn_frame, text="📩 好友请求", bg=BG_COLOR, relief="flat",
+                  font=FONT_SMALL, command=self._show_pending_requests).pack(fill="x", pady=(2,0))
+
+        self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
+        self.chat_listbox.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.friend_accounts = []
+        self._refresh_friend_list()
 
         self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
 
@@ -485,11 +517,408 @@ class MainWindow:
         self.msg_input.bind("<Return>", lambda e: self.send_chat_msg())
         tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white", command=self.send_chat_msg).pack(side="right", padx=5)
 
+    def _refresh_friend_list(self):
+        self.chat_listbox.delete(0, tk.END)
+        self.friend_accounts = []
+        friends = get_friend_list(self.account)
+        if not friends:
+            self.chat_listbox.insert(tk.END, "（暂无好友）")
+            return
+        for f in friends:
+            self.chat_listbox.insert(tk.END, f"{f['account']} - {f['nickname']}")
+            self.friend_accounts.append(f["account"])
+
+    def _show_add_friend_popup(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("添加好友")
+        pop.geometry("400x420")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text="🔍 搜索用户", font=FONT_TITLE,
+                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        search_frame = tk.Frame(pop, bg=CARD_BG)
+        search_frame.pack(fill="x", padx=20, pady=15)
+
+        tk.Label(search_frame, text="输入账号或昵称：", font=FONT_NORMAL).pack(anchor="w")
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var, font=FONT_NORMAL,
+                                highlightthickness=1, highlightcolor=HEADER_COLOR,
+                                highlightbackground=INPUT_BORDER)
+        search_entry.pack(fill="x", ipady=4, pady=5)
+        search_entry.focus()
+
+        result_frame = tk.Frame(pop, bg=BG_COLOR)
+        result_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+
+        result_canvas = tk.Canvas(result_frame, bg=BG_COLOR, highlightthickness=0, height=120)
+        result_scrollbar = tk.Scrollbar(result_frame, orient="vertical", command=result_canvas.yview)
+        result_inner = tk.Frame(result_canvas, bg=BG_COLOR)
+        result_inner.bind("<Configure>", lambda e: result_canvas.configure(
+            scrollregion=result_canvas.bbox("all")))
+        result_canvas.create_window((0, 0), window=result_inner, anchor="nw")
+        result_canvas.configure(yscrollcommand=result_scrollbar.set)
+        result_canvas.pack(side="left", fill="both", expand=True)
+        result_scrollbar.pack(side="right", fill="y")
+
+        def do_search():
+            keyword = search_var.get().strip()
+            if not keyword:
+                return
+            for w in result_inner.winfo_children():
+                w.destroy()
+            results = search_users(keyword)
+            friends = get_friend_list(self.account)
+            friend_accounts = [f["account"] for f in friends]
+            if not results:
+                tk.Label(result_inner, text="未找到匹配的用户", bg=BG_COLOR,
+                         fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=20)
+                return
+            for user in results:
+                if user["account"] == self.account or user["account"] in friend_accounts:
+                    continue
+                row = tk.Frame(result_inner, bg=CARD_BG, padx=10, pady=5)
+                row.pack(fill="x", pady=3)
+                tk.Label(row, text=f"{user['account']} - {user['nickname']}",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                tk.Button(row, text="添加好友", bg=BTN_COLOR, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=8,
+                          command=lambda a=user["account"], n=user["nickname"], r=row:
+                            _do_add(a, n, r)).pack(side="right")
+
+        def _do_add(target_account, target_nickname, row_widget):
+            ok = send_friend_request(self.account, self.user["nickname"], target_account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已发送请求", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+            else:
+                messagebox.showinfo("提示", "请求发送失败，可能已是好友或已发送过请求", parent=pop)
+
+        search_entry.bind("<Return>", lambda e: do_search())
+        tk.Button(search_frame, text="搜索", bg=BTN_COLOR, fg="white",
+                  font=FONT_BTN, command=do_search).pack(fill="x", ipady=4)
+
+        tk.Frame(pop, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=20)
+        tk.Label(pop, text="📩 收到的好友请求", font=("Microsoft YaHei", 11, "bold"),
+                 bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 0))
+
+        pending_frame = tk.Frame(pop, bg=BG_COLOR)
+        pending_frame.pack(fill="x", padx=20, pady=5)
+
+        requests = get_pending_requests(self.account)
+        if not requests:
+            tk.Label(pending_frame, text="暂无好友请求", bg=BG_COLOR,
+                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        else:
+            for req in requests:
+                req_row = tk.Frame(pending_frame, bg=CARD_BG, padx=10, pady=5)
+                req_row.pack(fill="x", pady=3)
+                tk.Label(req_row, text=f"{req['from_account']} - {req['from_nickname']}",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                tk.Button(req_row, text="接受", bg=ONLINE_GREEN, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], n=req["from_nickname"], r=req_row:
+                            _do_accept(a, n, r)).pack(side="right", padx=2)
+                tk.Button(req_row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], r=req_row:
+                            _do_reject(a, r)).pack(side="right", padx=2)
+
+        def _do_accept(from_account, from_nickname, row_widget):
+            ok = accept_friend_request(self.account, from_account, from_nickname,
+                                       self.user["nickname"])
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                self._refresh_friend_list()
+
+        def _do_reject(from_account, row_widget):
+            ok = reject_friend_request(self.account, from_account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
+                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+
+    def _show_pending_requests(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("好友请求")
+        pop.geometry("380x300")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text="📩 好友请求管理", font=FONT_TITLE,
+                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        tk.Label(pop, text="收到的请求", font=("Microsoft YaHei", 11, "bold"),
+                 bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 0))
+
+        in_frame = tk.Frame(pop, bg=BG_COLOR)
+        in_frame.pack(fill="x", padx=20, pady=5)
+
+        requests = get_pending_requests(self.account)
+        if not requests:
+            tk.Label(in_frame, text="暂无收到的好友请求", bg=BG_COLOR,
+                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=10)
+        else:
+            for req in requests:
+                row = tk.Frame(in_frame, bg=CARD_BG, padx=10, pady=5)
+                row.pack(fill="x", pady=3)
+                tk.Label(row, text=f"{req['from_account']} - {req['from_nickname']}",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                tk.Button(row, text="接受", bg=ONLINE_GREEN, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], n=req["from_nickname"], r=row:
+                            _acc(a, n, r)).pack(side="right", padx=2)
+                tk.Button(row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], r=row:
+                            _rej(a, r)).pack(side="right", padx=2)
+
+        def _acc(from_account, from_nickname, row_widget):
+            ok = accept_friend_request(self.account, from_account, from_nickname,
+                                       self.user["nickname"])
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                self._refresh_friend_list()
+
+        def _rej(from_account, row_widget):
+            ok = reject_friend_request(self.account, from_account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
+                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+
+        tk.Frame(pop, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=20, pady=10)
+        tk.Label(pop, text="💡 在聊天界面点击「添加好友」搜索并添加好友",
+                 bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(pady=5)
+
     def load_target_chat(self, event):
         sel = self.chat_listbox.curselection()
         if not sel:
             return
+        if not self.friend_accounts:
+            return
         idx = sel[0]
+        if idx >= len(self.friend_accounts):
+            return
+        target_account = self.friend_accounts[idx]
+        target_nickname = USER_DB.get(target_account, {}).get("nickname", target_account)
+
+        self.current_chat_target_account = target_account
+        self.current_chat_target_nickname = target_nickname
+        self.chat_title.config(text=f"和【{target_nickname}】聊天")
+
+        self._refresh_chat_display()
+        self._start_polling()
+
+    def _refresh_friend_list(self):
+        self.chat_listbox.delete(0, tk.END)
+        self.friend_accounts = []
+        friends = get_friend_list(self.account)
+        if not friends:
+            self.chat_listbox.insert(tk.END, "（暂无好友）")
+            return
+        for f in friends:
+            self.chat_listbox.insert(tk.END, f"{f['account']} - {f['nickname']}")
+            self.friend_accounts.append(f["account"])
+
+    def _show_add_friend_popup(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("添加好友")
+        pop.geometry("400x420")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text="🔍 搜索用户", font=FONT_TITLE,
+                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        search_frame = tk.Frame(pop, bg=CARD_BG)
+        search_frame.pack(fill="x", padx=20, pady=15)
+
+        tk.Label(search_frame, text="输入账号或昵称：", font=FONT_NORMAL).pack(anchor="w")
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var, font=FONT_NORMAL,
+                                highlightthickness=1, highlightcolor=HEADER_COLOR,
+                                highlightbackground=INPUT_BORDER)
+        search_entry.pack(fill="x", ipady=4, pady=5)
+        search_entry.focus()
+
+        result_frame = tk.Frame(pop, bg=BG_COLOR)
+        result_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+
+        result_canvas = tk.Canvas(result_frame, bg=BG_COLOR, highlightthickness=0, height=120)
+        result_scrollbar = tk.Scrollbar(result_frame, orient="vertical", command=result_canvas.yview)
+        result_inner = tk.Frame(result_canvas, bg=BG_COLOR)
+        result_inner.bind("<Configure>", lambda e: result_canvas.configure(
+            scrollregion=result_canvas.bbox("all")))
+        result_canvas.create_window((0, 0), window=result_inner, anchor="nw")
+        result_canvas.configure(yscrollcommand=result_scrollbar.set)
+        result_canvas.pack(side="left", fill="both", expand=True)
+        result_scrollbar.pack(side="right", fill="y")
+
+        def do_search():
+            keyword = search_var.get().strip()
+            if not keyword:
+                return
+            for w in result_inner.winfo_children():
+                w.destroy()
+            results = search_users(keyword)
+            friends = get_friend_list(self.account)
+            friend_accounts = [f["account"] for f in friends]
+            if not results:
+                tk.Label(result_inner, text="未找到匹配的用户", bg=BG_COLOR,
+                         fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=20)
+                return
+            for user in results:
+                if user["account"] == self.account or user["account"] in friend_accounts:
+                    continue
+                row = tk.Frame(result_inner, bg=CARD_BG, padx=10, pady=5)
+                row.pack(fill="x", pady=3)
+                tk.Label(row, text=f"{user['account']} - {user['nickname']}",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                tk.Button(row, text="添加好友", bg=BTN_COLOR, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=8,
+                          command=lambda a=user["account"], n=user["nickname"], r=row:
+                            _do_add(a, n, r)).pack(side="right")
+
+        def _do_add(target_account, target_nickname, row_widget):
+            ok = send_friend_request(self.account, self.user["nickname"], target_account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已发送请求", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+            else:
+                messagebox.showinfo("提示", "请求发送失败，可能已是好友或已发送过请求", parent=pop)
+
+        search_entry.bind("<Return>", lambda e: do_search())
+        tk.Button(search_frame, text="搜索", bg=BTN_COLOR, fg="white",
+                  font=FONT_BTN, command=do_search).pack(fill="x", ipady=4)
+
+        tk.Frame(pop, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=20)
+        tk.Label(pop, text="📩 收到的好友请求", font=("Microsoft YaHei", 11, "bold"),
+                 bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 0))
+
+        pending_frame = tk.Frame(pop, bg=BG_COLOR)
+        pending_frame.pack(fill="x", padx=20, pady=5)
+
+        requests = get_pending_requests(self.account)
+        if not requests:
+            tk.Label(pending_frame, text="暂无好友请求", bg=BG_COLOR,
+                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        else:
+            for req in requests:
+                req_row = tk.Frame(pending_frame, bg=CARD_BG, padx=10, pady=5)
+                req_row.pack(fill="x", pady=3)
+                tk.Label(req_row, text=f"{req['from_account']} - {req['from_nickname']}",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                tk.Button(req_row, text="接受", bg=ONLINE_GREEN, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], n=req["from_nickname"], r=req_row:
+                            _do_accept(a, n, r)).pack(side="right", padx=2)
+                tk.Button(req_row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], r=req_row:
+                            _do_reject(a, r)).pack(side="right", padx=2)
+
+        def _do_accept(from_account, from_nickname, row_widget):
+            ok = accept_friend_request(self.account, from_account, from_nickname,
+                                       self.user["nickname"])
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                self._refresh_friend_list()
+
+        def _do_reject(from_account, row_widget):
+            ok = reject_friend_request(self.account, from_account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
+                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+
+    def _show_pending_requests(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("好友请求")
+        pop.geometry("380x300")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text="📩 好友请求管理", font=FONT_TITLE,
+                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        tk.Label(pop, text="收到的请求", font=("Microsoft YaHei", 11, "bold"),
+                 bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 0))
+
+        in_frame = tk.Frame(pop, bg=BG_COLOR)
+        in_frame.pack(fill="x", padx=20, pady=5)
+
+        requests = get_pending_requests(self.account)
+        if not requests:
+            tk.Label(in_frame, text="暂无收到的好友请求", bg=BG_COLOR,
+                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=10)
+        else:
+            for req in requests:
+                row = tk.Frame(in_frame, bg=CARD_BG, padx=10, pady=5)
+                row.pack(fill="x", pady=3)
+                tk.Label(row, text=f"{req['from_account']} - {req['from_nickname']}",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                tk.Button(row, text="接受", bg=ONLINE_GREEN, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], n=req["from_nickname"], r=row:
+                            _acc(a, n, r)).pack(side="right", padx=2)
+                tk.Button(row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=6,
+                          command=lambda a=req["from_account"], r=row:
+                            _rej(a, r)).pack(side="right", padx=2)
+
+        def _acc(from_account, from_nickname, row_widget):
+            ok = accept_friend_request(self.account, from_account, from_nickname,
+                                       self.user["nickname"])
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                self._refresh_friend_list()
+
+        def _rej(from_account, row_widget):
+            ok = reject_friend_request(self.account, from_account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
+                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+
+        tk.Frame(pop, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=20, pady=10)
+        tk.Label(pop, text="💡 在聊天界面点击「添加好友」搜索并添加好友",
+                 bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(pady=5)
+
+    def load_target_chat(self, event):
+        sel = self.chat_listbox.curselection()
+        if not sel:
+            return
+        if not self.friend_accounts:
+            return
+        idx = sel[0]
+        if idx >= len(self.friend_accounts):
+            return
         target_account = self.friend_accounts[idx]
         target_nickname = USER_DB.get(target_account, {}).get("nickname", target_account)
 

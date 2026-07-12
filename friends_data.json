@@ -1,0 +1,20 @@
+{
+  "123": {
+    "friends": [
+      {
+        "account": "1234",
+        "nickname": "2"
+      }
+    ],
+    "pending": []
+  },
+  "1234": {
+    "friends": [
+      {
+        "account": "123",
+        "nickname": "1"
+      }
+    ],
+    "pending": []
+  }
+}
