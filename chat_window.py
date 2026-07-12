@@ -12,7 +12,7 @@ from config import (
     TEXT_GRAY, TEXT_LIGHT_GRAY, TEXT_BLACK, ONLINE_GREEN,
     FONT_TITLE, FONT_SUBTITLE, FONT_NORMAL, FONT_SMALL, FONT_BTN, FONT_EMOJI,
 )
-from chat_db import load_chat_data, save_chat_data
+from chat_db import load_chat_data, save_chat_data, send_message, load_conversation
 from user_db import USER_DB, _save_user_db
 from moments_db import (
     load_moments_data, add_moment, delete_moment, toggle_like_moment,
@@ -35,9 +35,10 @@ class MainWindow:
 
             # 聊天全局变量
             self.current_page = "home"
-            self.chat_history = load_chat_data()
-            self.friend_list = ["小明", "管理员", "QQ用户"]
-            self.current_chat_target = None
+            self.current_chat_target_account = None
+            self.current_chat_target_nickname = None
+            self.last_msg_count = 0  # 用于轮询检测新消息
+            self.polling_id = None   # 轮询定时器ID
 
             # 左侧侧边栏
             self.side_frame = tk.Frame(self.root, bg="#2C3E50", width=120)
@@ -70,6 +71,10 @@ class MainWindow:
         """清空右侧区域，切换页面用"""
         for widget in self.main_container.winfo_children():
             widget.destroy()
+        # 离开聊天页面时停止轮询
+        if self.polling_id:
+            self.root.after_cancel(self.polling_id)
+            self.polling_id = None
 
     def show_home_page(self):
         """渲染个人主页"""
@@ -139,18 +144,26 @@ class MainWindow:
                       font=FONT_NORMAL, command=cmd).pack(fill="x", pady=3)
 
     def show_chat_page(self):
-        """聊天页面"""
+        """聊天页面 - 支持跨账号互发消息"""
         self.current_page = "chat"
         self.clear_main_container()
 
-        # 左侧好友列表
-        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=120)
+        # 左侧好友列表（显示所有注册用户，排除自己）
+        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=140)
         left_box.pack(side="left", fill="y")
-        tk.Label(left_box, text="好友列表", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=10)
+        tk.Label(left_box, text="在线用户", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=10)
         self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
         self.chat_listbox.pack(fill="both", expand=True, padx=5, pady=5)
-        for name in self.friend_list:
-            self.chat_listbox.insert(tk.END, name)
+
+        # 加载所有注册用户作为聊天对象
+        self.friend_accounts = []  # 存储账号列表
+        for acc in USER_DB:
+            if acc != self.account:
+                nick = USER_DB[acc].get("nickname", acc)
+                display = f"{acc} - {nick}"
+                self.chat_listbox.insert(tk.END, display)
+                self.friend_accounts.append(acc)
+
         self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
 
         # 右侧聊天区域
@@ -180,55 +193,83 @@ class MainWindow:
         sel = self.chat_listbox.curselection()
         if not sel:
             return
-        target_name = self.chat_listbox.get(sel[0])
-        self.current_chat_target = target_name
-        self.chat_title.config(text=f"和【{target_name}】聊天")
+        idx = sel[0]
+        target_account = self.friend_accounts[idx]
+        target_nickname = USER_DB.get(target_account, {}).get("nickname", target_account)
 
-        if target_name not in self.chat_history:
-            self.chat_history[target_name] = []
+        self.current_chat_target_account = target_account
+        self.current_chat_target_nickname = target_nickname
+        self.chat_title.config(text=f"和【{target_nickname}】聊天")
+
+        # 加载聊天记录
+        self._refresh_chat_display()
+
+        # 启动轮询
+        self._start_polling()
+
+    def _refresh_chat_display(self):
+        """刷新聊天显示区域"""
+        if not self.current_chat_target_account:
+            return
+        messages = load_conversation(self.account, self.current_chat_target_account)
+        self.last_msg_count = len(messages)
 
         self.msg_display.config(state="normal")
         self.msg_display.delete(1.0, tk.END)
-        for msg in self.chat_history[target_name]:
-            self.msg_display.insert(tk.END, f"[{msg['time']}] {msg['sender']}：{msg['content']}\n")
+
+        # 显示系统提示
+        self.msg_display.insert(tk.END, f"--- 与 {self.current_chat_target_nickname} 的聊天 ---\n",
+                                ("center",))
+        self.msg_display.tag_config("center", justify="center", foreground=TEXT_LIGHT_GRAY,
+                                    font=FONT_SMALL)
+        self.msg_display.insert(tk.END, "\n")
+
+        for msg in messages:
+            sender = msg.get("sender_nickname", msg.get("sender_account", "未知"))
+            send_time = msg.get("time", "")
+            content = msg.get("content", "")
+            self.msg_display.insert(tk.END, f"[{send_time}] {sender}：{content}\n")
+
         self.msg_display.config(state="disabled")
         self.msg_display.see(tk.END)
 
+    def _start_polling(self):
+        """启动轮询，每2秒检查是否有新消息"""
+        # 先取消旧的轮询
+        if self.polling_id:
+            self.root.after_cancel(self.polling_id)
+            self.polling_id = None
+
+        def poll():
+            if self.current_page != "chat" or not self.current_chat_target_account:
+                return
+            messages = load_conversation(self.account, self.current_chat_target_account)
+            if len(messages) != self.last_msg_count:
+                self._refresh_chat_display()
+            self.polling_id = self.root.after(2000, poll)
+
+        self.polling_id = self.root.after(2000, poll)
+
     def send_chat_msg(self):
-        """发送消息 + 自动回复"""
-        if not self.current_chat_target:
+        """发送消息 - 使用账号体系跨窗口通信"""
+        if not self.current_chat_target_account:
             messagebox.showwarning("提示", "请先选择好友！")
             return
         text = self.msg_input.get().strip()
         if not text:
             return
 
-        target = self.current_chat_target
-        now_time = datetime.now().strftime("%H:%M")
-        my_msg = {"sender": self.user["nickname"], "content": text, "time": now_time}
-        self.chat_history[target].append(my_msg)
+        # 使用 chat_db 的跨账号消息发送
+        send_message(
+            sender_account=self.account,
+            sender_nickname=self.user["nickname"],
+            target_account=self.current_chat_target_account,
+            content=text
+        )
 
-        self.msg_display.config(state="normal")
-        self.msg_display.insert(tk.END, f"[{now_time}] 我：{text}\n")
-        self.msg_display.config(state="disabled")
+        # 刷新显示
         self.msg_input.delete(0, tk.END)
-        save_chat_data(self.chat_history)
-
-        self.root.after(1000, lambda: self.auto_reply(target))
-
-    def auto_reply(self, target_name):
-        """模拟好友自动回复"""
-        reply_pool = ["好的收到！", "明白了~", "哈哈有意思", "稍等我看看", "没问题！", "了解~"]
-        reply_txt = random.choice(reply_pool)
-        now_time = datetime.now().strftime("%H:%M")
-        reply_msg = {"sender": target_name, "content": reply_txt, "time": now_time}
-        self.chat_history[target_name].append(reply_msg)
-
-        self.msg_display.config(state="normal")
-        self.msg_display.insert(tk.END, f"[{now_time}] {target_name}：{reply_txt}\n")
-        self.msg_display.config(state="disabled")
-        self.msg_display.see(tk.END)
-        save_chat_data(self.chat_history)
+        self._refresh_chat_display()
 
     def edit_profile_pop(self):
         """修改资料弹窗（含性别、年龄、地区、姓名等，自动保存到文件）"""
@@ -638,6 +679,10 @@ class MainWindow:
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
         if confirm:
+            # 停止轮询
+            if self.polling_id:
+                self.root.after_cancel(self.polling_id)
+                self.polling_id = None
             self.root.destroy()
             # 延迟导入避免模块级循环依赖
             from login_window import run_login_window
