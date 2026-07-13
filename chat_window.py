@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """主窗口 / 聊天窗口 UI 模块"""
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, filedialog
 from datetime import datetime
 
 from config import (
@@ -20,9 +20,11 @@ from friends_db import (
 from moments_db import (
     load_moments_data, add_moment, delete_moment, toggle_like_moment,
 )
+from config import MOMENTS_PHOTOS_DIR, MOMENTS_VIDEOS_DIR
 import subprocess
 import os
 import sys
+from PIL import Image, ImageTk
 from checkin_db import (
     get_checkin_status, do_checkin, get_month_records,
 )
@@ -557,14 +559,26 @@ class MainWindow:
         self.moment_input.pack(side="left", fill="x", expand=True, ipady=5)
         self.moment_input.bind("<Return>", lambda e: self._do_publish_moment())
 
+        self.photo_path_var = tk.StringVar()
+        photo_btn = tk.Button(
+            input_row, text="📷", font=("Segoe UI Emoji", 14),
+            bg=CARD_BG, relief="flat", command=self._select_photo
+        )
+        photo_btn.pack(side="right", padx=(4, 4))
+        self.photo_label = tk.Label(
+            input_row, text="", bg=CARD_BG, fg=TEXT_LIGHT_GRAY,
+            font=FONT_SMALL, width=10, anchor="e"
+        )
+        self.photo_label.pack(side="right")
+
         # 视频选择相关
         self.moment_video_path = ""
-        self.video_label_var = tk.StringVar(value="未选择视频")
+        self.video_label_var = tk.StringVar(value="")
         tk.Label(input_row, textvariable=self.video_label_var,
-                 bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(side="right", padx=(0, 4))
+                 bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(side="right", padx=(0, 2))
 
-        tk.Button(input_row, text="🎬 选视频", bg=BTN_COLOR, fg="white",
-                  font=FONT_SMALL, relief="flat", padx=6,
+        tk.Button(input_row, text="🎬", font=("Segoe UI Emoji", 12),
+                  bg=CARD_BG, relief="flat",
                   command=self._select_moment_video).pack(side="right", padx=2)
 
         tk.Button(input_row, text="发布", bg=BTN_COLOR, fg="white",
@@ -595,9 +609,20 @@ class MainWindow:
 
         self._refresh_moments_list()
 
+    def _select_photo(self):
+        path = filedialog.askopenfilename(
+            title="选择照片",
+            filetypes=[("图片文件", "*.jpg *.jpeg *.png *.gif *.bmp")]
+        )
+        if path:
+            self.photo_path_var.set(path)
+            name = os.path.basename(path)
+            if len(name) > 12:
+                name = name[:10] + "…"
+            self.photo_label.config(text=f"📎{name}")
+
     def _select_moment_video(self):
         """弹出文件选择对话框选择视频文件"""
-        from tkinter import filedialog
         file_path = filedialog.askopenfilename(
             title="选择视频文件",
             parent=self.root,
@@ -606,25 +631,31 @@ class MainWindow:
         if file_path:
             self.moment_video_path = file_path
             fname = os.path.basename(file_path)
-            self.video_label_var.set(f"🎬 {fname}")
+            if len(fname) > 12:
+                fname = fname[:10] + "…"
+            self.video_label_var.set(f"🎬{fname}")
 
     def _do_publish_moment(self):
         content = self.moment_input.get().strip()
-        if not content and not self.moment_video_path:
-            messagebox.showwarning("提示", "请输入动态内容或选择视频！")
+        if not content and not self.moment_video_path and not self.photo_path_var.get():
+            messagebox.showwarning("提示", "请输入动态内容或选择图片/视频！")
             return
         try:
+            photo = self.photo_path_var.get()
             video_path = self.moment_video_path if self.moment_video_path else ""
             add_moment(
                 account=self.account,
                 nickname=self.user["nickname"],
                 avatar=self.user.get("avatar", "🐧"),
                 content=content,
+                photo_path=photo,
                 video_path=video_path,
             )
             self.moment_input.delete(0, tk.END)
+            self.photo_path_var.set("")
+            self.photo_label.config(text="")
             self.moment_video_path = ""
-            self.video_label_var.set("未选择视频")
+            self.video_label_var.set("")
             self._refresh_moments_list()
         except Exception as e:
             messagebox.showerror("发布失败", f"动态发布出错：{str(e)}")
@@ -681,6 +712,22 @@ class MainWindow:
                       font=FONT_SMALL, relief="flat", padx=10,
                       command=lambda p=video_path: self._play_video(p)).pack(side="right")
 
+        # 显示图片附件
+        photo_name = m.get("photo", "")
+        if photo_name:
+            photo_full = os.path.join(MOMENTS_PHOTOS_DIR, photo_name)
+            if os.path.exists(photo_full):
+                try:
+                    img = Image.open(photo_full)
+                    img.thumbnail((260, 400), Image.LANCZOS)
+                    tk_img = ImageTk.PhotoImage(img)
+                    img_label = tk.Label(card, image=tk_img, bg=CARD_BG)
+                    img_label.image = tk_img
+                    img_label.pack(pady=(0, 5))
+                    img_label.bind("<Button-1>", lambda e, p=photo_full: self._show_photo_popup(p))
+                except Exception:
+                    pass
+
         action_row = tk.Frame(card, bg=CARD_BG)
         action_row.pack(fill="x")
 
@@ -709,6 +756,23 @@ class MainWindow:
                 subprocess.call(('open' if sys.platform == 'darwin' else 'xdg-open', video_path))
         except Exception as e:
             messagebox.showerror("播放失败", f"无法打开视频文件：{str(e)}")
+
+    def _show_photo_popup(self, photo_full_path):
+        try:
+            pop = tk.Toplevel(self.root)
+            pop.title("查看照片")
+            img = Image.open(photo_full_path)
+            max_w, max_h = 600, 500
+            w, h = img.size
+            if w > max_w or h > max_h:
+                ratio = min(max_w / w, max_h / h)
+                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+            tk_img = ImageTk.PhotoImage(img)
+            label = tk.Label(pop, image=tk_img)
+            label.image = tk_img
+            label.pack(padx=10, pady=10)
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开图片：{str(e)}")
 
     def _do_toggle_like(self, moment_id):
         result = toggle_like_moment(moment_id, self.account)

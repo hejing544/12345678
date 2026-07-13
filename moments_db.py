@@ -5,7 +5,7 @@ import os
 import shutil
 from datetime import datetime
 
-from config import MOMENTS_FILE, MOMENTS_VIDEOS_DIR
+from config import MOMENTS_FILE, MOMENTS_VIDEOS_DIR, MOMENTS_PHOTOS_DIR
 
 
 def load_moments_data():
@@ -20,6 +20,29 @@ def save_moments_data(moments_list: list):
     """将所有动态保存到本地 JSON 文件"""
     with open(MOMENTS_FILE, "w", encoding="utf-8") as f:
         json.dump(moments_list, f, ensure_ascii=False, indent=2)
+
+
+def _save_photo_file(src_photo_path: str, moment_id: str) -> str:
+    """将选中的照片复制到 moments_photos/ 目录，返回图片文件名"""
+    if not src_photo_path or not os.path.isfile(src_photo_path):
+        return ""
+    os.makedirs(MOMENTS_PHOTOS_DIR, exist_ok=True)
+    ext = os.path.splitext(src_photo_path)[1] or ".jpg"
+    dest_name = f"{moment_id}{ext}"
+    dest_path = os.path.join(MOMENTS_PHOTOS_DIR, dest_name)
+    shutil.copy2(src_photo_path, dest_path)
+    return dest_name
+
+
+def delete_photo_file(photo_name: str):
+    """删除关联的图片文件"""
+    if photo_name:
+        photo_path = os.path.join(MOMENTS_PHOTOS_DIR, photo_name)
+        if os.path.isfile(photo_path):
+            try:
+                os.remove(photo_path)
+            except OSError:
+                pass
 
 
 def _save_video_file(src_video_path: str) -> str:
@@ -44,23 +67,25 @@ def delete_video_file(video_path: str):
 
 
 def add_moment(account: str, nickname: str, avatar: str, content: str,
-               video_path: str = "") -> dict:
+               video_path: str = "", photo_path: str = "") -> dict:
     """添加一条新动态，返回新创建的动态字典"""
     moments = load_moments_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    moment_id = str(int(datetime.now().timestamp() * 1000))
     saved_video = _save_video_file(video_path) if video_path else ""
+    saved_photo = _save_photo_file(photo_path, moment_id) if photo_path else ""
     new_moment = {
-        "id": str(int(datetime.now().timestamp() * 1000)),
+        "id": moment_id,
         "account": account,
         "nickname": nickname,
         "avatar": avatar,
         "content": content.strip(),
         "time": now,
         "likes": 0,
-        "liked_accounts": [],  # 记录点赞的账号列表，防止重复点赞
-        "video": saved_video,  # 视频相对路径，空字符串表示无视频
+        "liked_accounts": [],
+        "video": saved_video,
+        "photo": saved_photo,
     }
-    # 最新动态插到最前面
     moments.insert(0, new_moment)
     save_moments_data(moments)
     return new_moment
@@ -71,8 +96,8 @@ def delete_moment(moment_id: str, account: str) -> bool:
     moments = load_moments_data()
     for i, m in enumerate(moments):
         if m["id"] == moment_id and m["account"] == account:
-            # 同时删除关联的视频文件
             delete_video_file(m.get("video", ""))
+            delete_photo_file(m.get("photo", ""))
             moments.pop(i)
             save_moments_data(moments)
             return True
@@ -87,11 +112,9 @@ def toggle_like_moment(moment_id: str, account: str) -> dict:
             if "liked_accounts" not in m:
                 m["liked_accounts"] = []
             if account in m["liked_accounts"]:
-                # 已点赞 → 取消点赞
                 m["liked_accounts"].remove(account)
                 m["likes"] = len(m["liked_accounts"])
             else:
-                # 未点赞 → 点赞
                 m["liked_accounts"].append(account)
                 m["likes"] = len(m["liked_accounts"])
             save_moments_data(moments)
