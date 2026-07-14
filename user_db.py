@@ -101,3 +101,26 @@ def update_user_info(account: str, **kwargs):
         USER_DB[account][key] = value
     _save_user_db()
     return USER_DB[account]
+
+
+# ---------- 主题偏好持久化（全局） ----------
+
+THEME_PREF_FILE = "theme_pref.json"
+
+
+def save_theme_preference(mode: str):
+    """保存全局主题偏好 'day' 或 'night'"""
+    with open(THEME_PREF_FILE, "w", encoding="utf-8") as f:
+        json.dump({"theme": mode}, f)
+
+
+def get_theme_preference() -> str:
+    """读取全局主题偏好，默认 'day'"""
+    if os.path.exists(THEME_PREF_FILE):
+        try:
+            with open(THEME_PREF_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("theme", "day")
+        except Exception:
+            pass
+    return "day"

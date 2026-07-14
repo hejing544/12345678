@@ -10,9 +10,16 @@ from config import (
     LOGOUT_BG, LOGOUT_ACTIVE, INPUT_HIGHLIGHT, INPUT_BORDER,
     TEXT_GRAY, TEXT_LIGHT_GRAY, TEXT_BLACK, ONLINE_GREEN, DIVIDER_GRAY,
     FONT_TITLE, FONT_SUBTITLE, FONT_NORMAL, FONT_SMALL, FONT_BTN, FONT_EMOJI,
+    SIDEBAR_BG, SIDEBAR_BTN_BG, SIDEBAR_TEXT,
+    CHAT_TITLE_BG, CHAT_AREA_BG, MSG_DISPLAY_BG,
+    LEFT_BOX_BG, LEFT_BOX_TEXT, POPUP_HEADER_BG,
+    INPUT_BG, BTN_GREEN, BTN_RED, FRAME_BORDER,
+    TEXT_WHITE, TEXT_PRIMARY,
+    CAL_CHECKED_BG, CAL_CHECKED_FG, CAL_TODAY_BG, CAL_TODAY_FG,
+    BINDING_LABEL_FG,
 )
-from chat_db import send_message, load_conversation
-from user_db import USER_DB, _save_user_db
+from theme import get_theme_mode, toggle_theme, set_theme, get_theme
+from user_db import USER_DB, _save_user_db, save_theme_preference, get_theme_preference
 from friends_db import (
     get_friend_list, get_pending_requests, send_friend_request,
     accept_friend_request, reject_friend_request, remove_friend, search_users
@@ -63,30 +70,79 @@ class MainWindow:
             self.level_timer_id = None
             self._start_level_timer()
 
-            self.side_frame = tk.Frame(self.root, bg="#2C3E50", width=120)
+            self.side_frame = tk.Frame(self.root, bg=SIDEBAR_BG(), width=120)
             self.side_frame.pack(side="left", fill="y")
             self.side_frame.pack_propagate(False)
 
-            tk.Button(self.side_frame, text="主页", width=12, height=2,
-                      command=self.show_home_page).pack(pady=8)
-            tk.Button(self.side_frame, text="开始聊天", width=12, height=2,
-                      command=self.show_chat_page).pack(pady=8)
-            tk.Button(self.side_frame, text="群聊", width=12, height=2,
-                      command=self.show_group_page).pack(pady=8)
-            tk.Button(self.side_frame, text="朋友圈", width=12, height=2,
-                       command=self.show_moments_page).pack(pady=8)
-            tk.Button(self.side_frame, text="每日打卡", width=12, height=2,
-                       command=self.show_checkin_page).pack(pady=8)
-            tk.Button(self.side_frame, text="退出登录", width=12, height=2,
-                      bg=LOGOUT_BG, fg="white", command=self._logout).pack(pady=30)
+            # 侧边栏按钮公共样式
+            self._add_sidebar_btn("主页", self.show_home_page)
+            self._add_sidebar_btn("开始聊天", self.show_chat_page)
+            self._add_sidebar_btn("群聊", self.show_group_page)
+            self._add_sidebar_btn("朋友圈", self.show_moments_page)
+            self._add_sidebar_btn("每日打卡", self.show_checkin_page)
 
-            self.main_container = tk.Frame(self.root, bg=BG_COLOR)
+            # 主题切换按钮
+            self.theme_btn = tk.Button(
+                self.side_frame, text="", width=12, height=2,
+                bg=SIDEBAR_BTN_BG(), fg=SIDEBAR_TEXT(), relief="flat",
+                command=self._toggle_theme
+            )
+            self.theme_btn.pack(pady=(20, 5))
+            self._update_theme_btn_text()
+
+            tk.Button(self.side_frame, text="退出登录", width=12, height=2,
+                      bg=LOGOUT_BG(), fg="white", command=self._logout).pack(pady=10)
+
+            self.main_container = tk.Frame(self.root, bg=BG_COLOR())
             self.main_container.pack(side="right", fill="both", expand=True)
 
             self.show_home_page()
 
         except Exception as e:
             messagebox.showerror("页面异常", f"主页初始化失败：{str(e)}")
+
+    def _add_sidebar_btn(self, text, command):
+        tk.Button(
+            self.side_frame, text=text, width=12, height=2,
+            bg=SIDEBAR_BTN_BG(), fg=SIDEBAR_TEXT(), relief="flat",
+            command=command
+        ).pack(pady=3)
+
+    def _update_theme_btn_text(self):
+        mode = get_theme_mode()
+        self.theme_btn.config(text="🌙 夜间" if mode == "day" else "☀️ 日间")
+
+    def _toggle_theme(self):
+        new_mode = toggle_theme()
+        save_theme_preference(new_mode)
+        self._rebuild_all()
+
+    def _rebuild_all(self):
+        """切换主题时重建整个界面"""
+        self._update_theme_btn_text()
+        # 重新设置侧边栏颜色
+        self.side_frame.config(bg=SIDEBAR_BG())
+        for w in self.side_frame.winfo_children():
+            if isinstance(w, tk.Button):
+                if w.cget("text") in ("退出登录",):
+                    w.config(bg=LOGOUT_BG())
+                else:
+                    w.config(bg=SIDEBAR_BTN_BG(), fg=SIDEBAR_TEXT())
+        self.main_container.config(bg=BG_COLOR())
+
+        # 刷新当前页面
+        page = self.current_page
+        self.current_page = ""
+        if page == "home":
+            self.show_home_page()
+        elif page == "chat":
+            self.show_chat_page()
+        elif page == "group":
+            self.show_group_page()
+        elif page == "moments":
+            self.show_moments_page()
+        elif page == "checkin":
+            self.show_checkin_page()
 
     def clear_main_container(self):
         for widget in self.main_container.winfo_children():
@@ -102,39 +158,39 @@ class MainWindow:
         self.current_page = "home"
         self.clear_main_container()
 
-        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR(), height=120)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Label(header, text="QQ主页", fg="white", bg=HEADER_COLOR,
+        tk.Label(header, text="QQ主页", fg="white", bg=HEADER_COLOR(),
                  font=("Microsoft YaHei", 28, "bold")).place(x=20, y=15)
         tk.Label(header, text=f"当前登录账号：{self.account}",
-                 fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=65)
-        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR,
+                 fg="#E8F4FD", bg=HEADER_COLOR(), font=FONT_SUBTITLE).place(x=20, y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR(),
                   font=("Arial", 16), relief="flat",
                   command=self.root.quit).place(x=370, y=10)
 
-        card = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        card = tk.Frame(self.main_container, bg=CARD_BG(), padx=15, pady=15)
         card.pack(fill="x", padx=20, pady=15)
         avatar_text = self.user.get("avatar", "🐧")
-        tk.Label(card, text=avatar_text, font=FONT_EMOJI, bg=CARD_BG).pack(side="left")
-        info_frame = tk.Frame(card, bg=CARD_BG)
+        tk.Label(card, text=avatar_text, font=FONT_EMOJI, bg=CARD_BG()).pack(side="left")
+        info_frame = tk.Frame(card, bg=CARD_BG())
         info_frame.pack(side="left", padx=15)
-        top_info_row = tk.Frame(info_frame, bg=CARD_BG)
+        top_info_row = tk.Frame(info_frame, bg=CARD_BG())
         top_info_row.pack(anchor="w", fill="x")
-        tk.Label(top_info_row, text=self.user["nickname"], bg=CARD_BG,
-                 fg=TEXT_BLACK, font=("Microsoft YaHei", 16, "bold")).pack(side="left")
+        tk.Label(top_info_row, text=self.user["nickname"], bg=CARD_BG(),
+                 fg=TEXT_BLACK(), font=("Microsoft YaHei", 16, "bold")).pack(side="left")
         mood_val = self.user.get("mood", "😊开心")
-        self.mood_label = tk.Label(top_info_row, text=mood_val, bg=CARD_BG,
+        self.mood_label = tk.Label(top_info_row, text=mood_val, bg=CARD_BG(),
                                     font=("Segoe UI Emoji", 14), cursor="hand2")
         self.mood_label.pack(side="left", padx=(8, 0))
         self.mood_label.bind("<Button-1>", lambda e: self._change_mood_popup())
         tk.Label(info_frame, text=f"签名：{self.user['signature']}",
-                 bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=5)
-        tk.Label(info_frame, text="● 在线", bg=CARD_BG, fg=ONLINE_GREEN, font=FONT_SMALL).pack(anchor="w")
+                 bg=CARD_BG(), fg=TEXT_LIGHT_GRAY(), font=FONT_SMALL).pack(anchor="w", pady=5)
+        tk.Label(info_frame, text="● 在线", bg=CARD_BG(), fg=ONLINE_GREEN(), font=FONT_SMALL).pack(anchor="w")
 
-        detail = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        detail = tk.Frame(self.main_container, bg=CARD_BG(), padx=15, pady=15)
         detail.pack(fill="x", padx=20)
-        tk.Label(detail, text="个人信息", bg=CARD_BG, fg=TEXT_BLACK,
+        tk.Label(detail, text="个人信息", bg=CARD_BG(), fg=TEXT_BLACK(),
                  font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
         display_text, total_stars = self.get_level_stars_display()
         info_list = [
@@ -147,16 +203,16 @@ class MainWindow:
             ("QQ等级", display_text),
         ]
         for label, val in info_list:
-            row = tk.Frame(detail, bg=CARD_BG)
+            row = tk.Frame(detail, bg=CARD_BG())
             row.pack(fill="x", pady=4)
-            tk.Label(row, text=label, bg=CARD_BG, fg=TEXT_GRAY,
+            tk.Label(row, text=label, bg=CARD_BG(), fg=TEXT_GRAY(),
                      font=FONT_NORMAL, width=10, anchor="w").pack(side="left")
-            tk.Label(row, text=val, bg=CARD_BG, fg=TEXT_BLACK,
+            tk.Label(row, text=val, bg=CARD_BG(), fg=TEXT_BLACK(),
                      font=FONT_NORMAL, anchor="w").pack(side="left")
 
-        func_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        func_frame = tk.Frame(self.main_container, bg=CARD_BG(), padx=15, pady=15)
         func_frame.pack(fill="x", padx=20, pady=15)
-        tk.Label(func_frame, text="快捷功能", bg=CARD_BG, fg=TEXT_BLACK,
+        tk.Label(func_frame, text="快捷功能", bg=CARD_BG(), fg=TEXT_BLACK(),
                  font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
         func_items = [
             ("👥  我的好友", lambda: messagebox.showinfo("提示", "好友功能开发中")),
@@ -166,7 +222,7 @@ class MainWindow:
             ("✏️  修改个人资料", self.edit_profile_pop)
         ]
         for text, cmd in func_items:
-            tk.Button(func_frame, text=text, bg=CARD_BG, relief="flat", anchor="w",
+            tk.Button(func_frame, text=text, bg=CARD_BG(), relief="flat", anchor="w",
                       font=FONT_NORMAL, command=cmd).pack(fill="x", pady=3)
 
     # ==================== 心情状态切换 ====================
@@ -188,7 +244,7 @@ class MainWindow:
             pop.destroy()
         for display, value in moods:
             tk.Button(pop, text=display, font=("Segoe UI Emoji", 16),
-                      bg=CARD_BG, relief="flat", anchor="w", padx=20,
+                      bg=CARD_BG(), relief="flat", anchor="w", padx=20,
                       command=lambda v=value: set_mood(v)).pack(fill="x", padx=30, pady=3)
 
     # ==================== QQ等级系统 ====================
@@ -226,18 +282,23 @@ class MainWindow:
         self.current_page = "chat"
         self.clear_main_container()
 
-        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=140)
+        left_box = tk.Frame(self.main_container, bg=LEFT_BOX_BG(), width=140)
         left_box.pack(side="left", fill="y")
-        tk.Label(left_box, text="我的好友", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=5)
+        tk.Label(left_box, text="我的好友", bg=LEFT_BOX_BG(), font=FONT_NORMAL,
+                 fg=LEFT_BOX_TEXT()).pack(pady=5)
 
-        btn_frame = tk.Frame(left_box, bg="#EEEEEE")
+        btn_frame = tk.Frame(left_box, bg=LEFT_BOX_BG())
         btn_frame.pack(fill="x", padx=5, pady=2)
-        tk.Button(btn_frame, text="➕ 添加好友", bg=BG_COLOR, relief="flat",
-                  font=FONT_SMALL, command=self._show_add_friend_popup).pack(fill="x")
-        tk.Button(btn_frame, text="📩 好友请求", bg=BG_COLOR, relief="flat",
-                  font=FONT_SMALL, command=self._show_pending_requests).pack(fill="x", pady=(2,0))
+        tk.Button(btn_frame, text="➕ 添加好友", bg=CARD_BG(), relief="flat",
+                  font=FONT_SMALL, fg=TEXT_BLACK(),
+                  command=self._show_add_friend_popup).pack(fill="x")
+        tk.Button(btn_frame, text="📩 好友请求", bg=CARD_BG(), relief="flat",
+                  font=FONT_SMALL, fg=TEXT_BLACK(),
+                  command=self._show_pending_requests).pack(fill="x", pady=(2,0))
 
-        self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
+        self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL,
+                                       bg=CARD_BG(), fg=TEXT_BLACK(),
+                                       selectbackground=HEADER_COLOR())
         self.chat_listbox.pack(fill="both", expand=True, padx=5, pady=5)
 
         self.friend_accounts = []
@@ -245,23 +306,28 @@ class MainWindow:
 
         self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
 
-        chat_area = tk.Frame(self.main_container, bg="white")
+        chat_area = tk.Frame(self.main_container, bg=CHAT_AREA_BG())
         chat_area.pack(side="right", fill="both", expand=True, padx=5)
-        self.chat_title = tk.Label(chat_area, text="请选择好友开始聊天", bg="white", font=FONT_TITLE)
+        self.chat_title = tk.Label(chat_area, text="请选择好友开始聊天",
+                                   bg=CHAT_TITLE_BG(), font=FONT_TITLE,
+                                   fg=TEXT_BLACK())
         self.chat_title.pack(fill="x", pady=10)
 
         self.msg_display = scrolledtext.ScrolledText(
-            chat_area, bg=BG_COLOR, fg=TEXT_BLACK,
-            font=FONT_NORMAL, wrap="word", state="disabled")
+            chat_area, bg=MSG_DISPLAY_BG(), fg=TEXT_BLACK(),
+            font=FONT_NORMAL, wrap="word", state="disabled",
+            insertbackground=TEXT_BLACK())
         self.msg_display.pack(fill="both", expand=True, padx=10, pady=5)
 
-        input_frame = tk.Frame(chat_area, bg="white")
+        input_frame = tk.Frame(chat_area, bg=CHAT_AREA_BG())
         input_frame.pack(fill="x", padx=10, pady=10)
         self.msg_input = tk.Entry(input_frame, font=FONT_NORMAL, highlightthickness=1,
-                                  highlightcolor=HEADER_COLOR, highlightbackground=INPUT_BORDER)
+                                  highlightcolor=HEADER_COLOR(), highlightbackground=FRAME_BORDER(),
+                                  bg=INPUT_BG(), fg=TEXT_BLACK())
         self.msg_input.pack(side="left", fill="x", expand=True, ipady=5)
         self.msg_input.bind("<Return>", lambda e: self.send_chat_msg())
-        tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white",
+        tk.Button(input_frame, text="发送", bg=BTN_COLOR(), fg="white",
+                  font=FONT_NORMAL, relief="flat",
                   command=self.send_chat_msg).pack(side="right", padx=5)
 
     def _refresh_friend_list(self):
@@ -284,25 +350,27 @@ class MainWindow:
         pop.resizable(False, False)
 
         tk.Label(pop, text="🔍 搜索用户", font=FONT_TITLE,
-                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+                 bg=POPUP_HEADER_BG(), fg="white").pack(fill="x", ipady=10)
 
-        search_frame = tk.Frame(pop, bg=CARD_BG)
+        search_frame = tk.Frame(pop, bg=CARD_BG())
         search_frame.pack(fill="x", padx=20, pady=15)
 
-        tk.Label(search_frame, text="输入账号或昵称：", font=FONT_NORMAL).pack(anchor="w")
+        tk.Label(search_frame, text="输入账号或昵称：", font=FONT_NORMAL,
+                 bg=CARD_BG(), fg=TEXT_BLACK()).pack(anchor="w")
         search_var = tk.StringVar()
         search_entry = tk.Entry(search_frame, textvariable=search_var, font=FONT_NORMAL,
-                                highlightthickness=1, highlightcolor=HEADER_COLOR,
-                                highlightbackground=INPUT_BORDER)
+                                highlightthickness=1, highlightcolor=HEADER_COLOR(),
+                                highlightbackground=FRAME_BORDER(),
+                                bg=INPUT_BG(), fg=TEXT_BLACK())
         search_entry.pack(fill="x", ipady=4, pady=5)
         search_entry.focus()
 
-        result_frame = tk.Frame(pop, bg=BG_COLOR)
+        result_frame = tk.Frame(pop, bg=BG_COLOR())
         result_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
 
-        result_canvas = tk.Canvas(result_frame, bg=BG_COLOR, highlightthickness=0, height=120)
+        result_canvas = tk.Canvas(result_frame, bg=BG_COLOR(), highlightthickness=0, height=120)
         result_scrollbar = tk.Scrollbar(result_frame, orient="vertical", command=result_canvas.yview)
-        result_inner = tk.Frame(result_canvas, bg=BG_COLOR)
+        result_inner = tk.Frame(result_canvas, bg=BG_COLOR())
         result_inner.bind("<Configure>", lambda e: result_canvas.configure(
             scrollregion=result_canvas.bbox("all")))
         result_canvas.create_window((0, 0), window=result_inner, anchor="nw")
@@ -322,18 +390,18 @@ class MainWindow:
             friend_accounts = [f["account"] for f in friends]
 
             if not results:
-                tk.Label(result_inner, text="未找到匹配的用户", bg=BG_COLOR,
-                         fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=20)
+                tk.Label(result_inner, text="未找到匹配的用户", bg=BG_COLOR(),
+                         fg=TEXT_LIGHT_GRAY(), font=FONT_NORMAL).pack(pady=20)
                 return
 
             for user in results:
                 if user["account"] == self.account or user["account"] in friend_accounts:
                     continue
-                row = tk.Frame(result_inner, bg=CARD_BG, padx=10, pady=5)
+                row = tk.Frame(result_inner, bg=CARD_BG(), padx=10, pady=5)
                 row.pack(fill="x", pady=3)
                 tk.Label(row, text=f"{user['account']} - {user['nickname']}",
-                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
-                tk.Button(row, text="添加好友", bg=BTN_COLOR, fg="white",
+                         bg=CARD_BG(), font=FONT_NORMAL, fg=TEXT_BLACK()).pack(side="left")
+                tk.Button(row, text="添加好友", bg=BTN_COLOR(), fg="white",
                           font=FONT_SMALL, relief="flat", padx=8,
                           command=lambda a=user["account"], n=user["nickname"], r=row:
                             _do_add(a, n, r)).pack(side="right")
@@ -343,37 +411,37 @@ class MainWindow:
             if ok:
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="✅ 已发送请求", bg=CARD_BG,
-                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="✅ 已发送请求", bg=CARD_BG(),
+                         fg=ONLINE_GREEN(), font=FONT_SMALL).pack(side="left")
             else:
                 messagebox.showinfo("提示", "请求发送失败，可能已是好友或已发送过请求", parent=pop)
 
         search_entry.bind("<Return>", lambda e: do_search())
-        tk.Button(search_frame, text="搜索", bg=BTN_COLOR, fg="white",
+        tk.Button(search_frame, text="搜索", bg=BTN_COLOR(), fg="white",
                   font=FONT_BTN, command=do_search).pack(fill="x", ipady=4)
 
-        tk.Frame(pop, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=20)
+        tk.Frame(pop, bg=DIVIDER_GRAY(), height=1).pack(fill="x", padx=20)
         tk.Label(pop, text="📩 收到的好友请求", font=("Microsoft YaHei", 11, "bold"),
-                 bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 0))
+                 bg=BG_COLOR(), fg=TEXT_BLACK()).pack(anchor="w", padx=20, pady=(10, 0))
 
-        pending_frame = tk.Frame(pop, bg=BG_COLOR)
+        pending_frame = tk.Frame(pop, bg=BG_COLOR())
         pending_frame.pack(fill="x", padx=20, pady=5)
 
         requests = get_pending_requests(self.account)
         if not requests:
-            tk.Label(pending_frame, text="暂无好友请求", bg=BG_COLOR,
-                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w")
+            tk.Label(pending_frame, text="暂无好友请求", bg=BG_COLOR(),
+                     fg=TEXT_LIGHT_GRAY(), font=FONT_SMALL).pack(anchor="w")
         else:
             for req in requests:
-                req_row = tk.Frame(pending_frame, bg=CARD_BG, padx=10, pady=5)
+                req_row = tk.Frame(pending_frame, bg=CARD_BG(), padx=10, pady=5)
                 req_row.pack(fill="x", pady=3)
                 tk.Label(req_row, text=f"{req['from_account']} - {req['from_nickname']}",
-                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
-                tk.Button(req_row, text="接受", bg=ONLINE_GREEN, fg="white",
+                         bg=CARD_BG(), font=FONT_NORMAL, fg=TEXT_BLACK()).pack(side="left")
+                tk.Button(req_row, text="接受", bg=BTN_GREEN(), fg="white",
                           font=FONT_SMALL, relief="flat", padx=6,
                           command=lambda a=req["from_account"], n=req["from_nickname"], r=req_row:
                             _do_accept(a, n, r)).pack(side="right", padx=2)
-                tk.Button(req_row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                tk.Button(req_row, text="拒绝", bg=BTN_RED(), fg="white",
                           font=FONT_SMALL, relief="flat", padx=6,
                           command=lambda a=req["from_account"], r=req_row:
                             _do_reject(a, r)).pack(side="right", padx=2)
@@ -384,8 +452,8 @@ class MainWindow:
             if ok:
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG,
-                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG(),
+                         fg=ONLINE_GREEN(), font=FONT_SMALL).pack(side="left")
                 self._refresh_friend_list()
 
         def _do_reject(from_account, row_widget):
@@ -393,8 +461,8 @@ class MainWindow:
             if ok:
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
-                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG(),
+                         fg=TEXT_GRAY(), font=FONT_SMALL).pack(side="left")
 
     def _show_pending_requests(self):
         pop = tk.Toplevel(self.root)
@@ -405,29 +473,29 @@ class MainWindow:
         pop.resizable(False, False)
 
         tk.Label(pop, text="📩 好友请求管理", font=FONT_TITLE,
-                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+                 bg=POPUP_HEADER_BG(), fg="white").pack(fill="x", ipady=10)
 
         tk.Label(pop, text="收到的请求", font=("Microsoft YaHei", 11, "bold"),
-                 bg=BG_COLOR).pack(anchor="w", padx=20, pady=(10, 0))
+                 bg=BG_COLOR(), fg=TEXT_BLACK()).pack(anchor="w", padx=20, pady=(10, 0))
 
-        in_frame = tk.Frame(pop, bg=BG_COLOR)
+        in_frame = tk.Frame(pop, bg=BG_COLOR())
         in_frame.pack(fill="x", padx=20, pady=5)
 
         requests = get_pending_requests(self.account)
         if not requests:
-            tk.Label(in_frame, text="暂无收到的好友请求", bg=BG_COLOR,
-                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=10)
+            tk.Label(in_frame, text="暂无收到的好友请求", bg=BG_COLOR(),
+                     fg=TEXT_LIGHT_GRAY(), font=FONT_SMALL).pack(anchor="w", pady=10)
         else:
             for req in requests:
-                row = tk.Frame(in_frame, bg=CARD_BG, padx=10, pady=5)
+                row = tk.Frame(in_frame, bg=CARD_BG(), padx=10, pady=5)
                 row.pack(fill="x", pady=3)
                 tk.Label(row, text=f"{req['from_account']} - {req['from_nickname']}",
-                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
-                tk.Button(row, text="接受", bg=ONLINE_GREEN, fg="white",
+                         bg=CARD_BG(), font=FONT_NORMAL, fg=TEXT_BLACK()).pack(side="left")
+                tk.Button(row, text="接受", bg=BTN_GREEN(), fg="white",
                           font=FONT_SMALL, relief="flat", padx=6,
                           command=lambda a=req["from_account"], n=req["from_nickname"], r=row:
                             _acc(a, n, r)).pack(side="right", padx=2)
-                tk.Button(row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                tk.Button(row, text="拒绝", bg=BTN_RED(), fg="white",
                           font=FONT_SMALL, relief="flat", padx=6,
                           command=lambda a=req["from_account"], r=row:
                             _rej(a, r)).pack(side="right", padx=2)
@@ -438,8 +506,8 @@ class MainWindow:
             if ok:
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG,
-                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="✅ 已接受", bg=CARD_BG(),
+                         fg=ONLINE_GREEN(), font=FONT_SMALL).pack(side="left")
                 self._refresh_friend_list()
 
         def _rej(from_account, row_widget):
@@ -447,12 +515,12 @@ class MainWindow:
             if ok:
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
-                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG(),
+                         fg=TEXT_GRAY(), font=FONT_SMALL).pack(side="left")
 
-        tk.Frame(pop, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=20, pady=10)
+        tk.Frame(pop, bg=DIVIDER_GRAY(), height=1).pack(fill="x", padx=20, pady=10)
         tk.Label(pop, text="💡 在聊天界面点击「添加好友」搜索并添加好友",
-                 bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(pady=5)
+                 bg=BG_COLOR(), fg=TEXT_LIGHT_GRAY(), font=FONT_SMALL).pack(pady=5)
 
     def load_target_chat(self, event):
         sel = self.chat_listbox.curselection()
@@ -533,53 +601,62 @@ class MainWindow:
         self.current_page = "group"
         self.clear_main_container()
 
-        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=140)
+        left_box = tk.Frame(self.main_container, bg=LEFT_BOX_BG(), width=140)
         left_box.pack(side="left", fill="y")
-        tk.Label(left_box, text="我的群聊", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=5)
+        tk.Label(left_box, text="我的群聊", bg=LEFT_BOX_BG(), font=FONT_NORMAL,
+                 fg=LEFT_BOX_TEXT()).pack(pady=5)
 
-        btn_frame = tk.Frame(left_box, bg="#EEEEEE")
+        btn_frame = tk.Frame(left_box, bg=LEFT_BOX_BG())
         btn_frame.pack(fill="x", padx=5, pady=2)
-        tk.Button(btn_frame, text="✚ 创建群", bg=BG_COLOR, relief="flat",
-                  font=FONT_SMALL, command=self._show_create_group_popup).pack(fill="x")
-        tk.Button(btn_frame, text="🔍 加入群", bg=BG_COLOR, relief="flat",
-                  font=FONT_SMALL, command=self._show_join_group_popup).pack(fill="x", pady=(2,0))
+        tk.Button(btn_frame, text="✚ 创建群", bg=CARD_BG(), relief="flat",
+                  font=FONT_SMALL, fg=TEXT_BLACK(),
+                  command=self._show_create_group_popup).pack(fill="x")
+        tk.Button(btn_frame, text="🔍 加入群", bg=CARD_BG(), relief="flat",
+                  font=FONT_SMALL, fg=TEXT_BLACK(),
+                  command=self._show_join_group_popup).pack(fill="x", pady=(2,0))
 
-        self.group_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
+        self.group_listbox = tk.Listbox(left_box, font=FONT_NORMAL,
+                                        bg=CARD_BG(), fg=TEXT_BLACK(),
+                                        selectbackground=HEADER_COLOR())
         self.group_listbox.pack(fill="both", expand=True, padx=5, pady=5)
 
-        self.my_groups_data = []  # [{group_id, group_name, ...}]
+        self.my_groups_data = []
         self._refresh_group_list()
 
         self.group_listbox.bind("<<ListboxSelect>>", self.load_target_group)
 
-        # 右侧群聊天区域
-        chat_area = tk.Frame(self.main_container, bg="white")
+        chat_area = tk.Frame(self.main_container, bg=CHAT_AREA_BG())
         chat_area.pack(side="right", fill="both", expand=True, padx=5)
 
-        title_frame = tk.Frame(chat_area, bg="white")
+        title_frame = tk.Frame(chat_area, bg=CHAT_TITLE_BG())
         title_frame.pack(fill="x")
         self.group_chat_title = tk.Label(title_frame, text="请选择群开始聊天",
-                                         bg="white", font=FONT_TITLE)
+                                         bg=CHAT_TITLE_BG(), font=FONT_TITLE,
+                                         fg=TEXT_BLACK())
         self.group_chat_title.pack(side="left", pady=10, padx=5)
         self.group_mgmt_btn = tk.Button(
-            title_frame, text="⚙ 群管理", bg=BG_COLOR, relief="flat",
-            font=FONT_SMALL, command=self._show_group_management_popup
+            title_frame, text="⚙ 群管理", bg=CARD_BG(), relief="flat",
+            font=FONT_SMALL, fg=TEXT_BLACK(),
+            command=self._show_group_management_popup
         )
         self.group_mgmt_btn.pack(side="right", padx=10)
-        self.group_mgmt_btn.pack_forget()  # 默认隐藏
+        self.group_mgmt_btn.pack_forget()
 
         self.group_msg_display = scrolledtext.ScrolledText(
-            chat_area, bg=BG_COLOR, fg=TEXT_BLACK,
-            font=FONT_NORMAL, wrap="word", state="disabled")
+            chat_area, bg=MSG_DISPLAY_BG(), fg=TEXT_BLACK(),
+            font=FONT_NORMAL, wrap="word", state="disabled",
+            insertbackground=TEXT_BLACK())
         self.group_msg_display.pack(fill="both", expand=True, padx=10, pady=5)
 
-        input_frame = tk.Frame(chat_area, bg="white")
+        input_frame = tk.Frame(chat_area, bg=CHAT_AREA_BG())
         input_frame.pack(fill="x", padx=10, pady=10)
         self.group_msg_input = tk.Entry(input_frame, font=FONT_NORMAL, highlightthickness=1,
-                                        highlightcolor=HEADER_COLOR, highlightbackground=INPUT_BORDER)
+                                        highlightcolor=HEADER_COLOR(), highlightbackground=FRAME_BORDER(),
+                                        bg=INPUT_BG(), fg=TEXT_BLACK())
         self.group_msg_input.pack(side="left", fill="x", expand=True, ipady=5)
         self.group_msg_input.bind("<Return>", lambda e: self.send_group_msg())
-        tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white",
+        tk.Button(input_frame, text="发送", bg=BTN_COLOR(), fg="white",
+                  font=FONT_NORMAL, relief="flat",
                   command=self.send_group_msg).pack(side="right", padx=5)
 
     def _refresh_group_list(self):
@@ -601,13 +678,15 @@ class MainWindow:
         pop.resizable(False, False)
 
         tk.Label(pop, text="✚ 创建新群", font=FONT_TITLE,
-                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+                 bg=POPUP_HEADER_BG(), fg="white").pack(fill="x", ipady=10)
 
-        tk.Label(pop, text="群名称：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(15, 5))
+        tk.Label(pop, text="群名称：", font=FONT_NORMAL, bg=BG_COLOR(),
+                 fg=TEXT_BLACK()).pack(anchor="w", padx=30, pady=(15, 5))
         name_var = tk.StringVar()
         entry = tk.Entry(pop, textvariable=name_var, font=FONT_NORMAL,
-                         highlightthickness=1, highlightcolor=HEADER_COLOR,
-                         highlightbackground=INPUT_BORDER)
+                         highlightthickness=1, highlightcolor=HEADER_COLOR(),
+                         highlightbackground=FRAME_BORDER(),
+                         bg=INPUT_BG(), fg=TEXT_BLACK())
         entry.pack(fill="x", padx=30, ipady=4)
         entry.focus()
         entry.bind("<Return>", lambda e: _do_create())
@@ -625,7 +704,7 @@ class MainWindow:
             else:
                 messagebox.showerror("失败", "群创建失败，请重试", parent=pop)
 
-        tk.Button(pop, text="创建", bg=BTN_COLOR, fg="white",
+        tk.Button(pop, text="创建", bg=BTN_COLOR(), fg="white",
                   font=FONT_BTN, command=_do_create).pack(pady=15)
 
     def _show_join_group_popup(self):
@@ -637,25 +716,27 @@ class MainWindow:
         pop.resizable(False, False)
 
         tk.Label(pop, text="🔍 搜索并加入群", font=FONT_TITLE,
-                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+                 bg=POPUP_HEADER_BG(), fg="white").pack(fill="x", ipady=10)
 
-        search_frame = tk.Frame(pop, bg=CARD_BG)
+        search_frame = tk.Frame(pop, bg=CARD_BG())
         search_frame.pack(fill="x", padx=20, pady=15)
 
-        tk.Label(search_frame, text="输入群号或群名：", font=FONT_NORMAL).pack(anchor="w")
+        tk.Label(search_frame, text="输入群号或群名：", font=FONT_NORMAL,
+                 bg=CARD_BG(), fg=TEXT_BLACK()).pack(anchor="w")
         search_var = tk.StringVar()
         search_entry = tk.Entry(search_frame, textvariable=search_var, font=FONT_NORMAL,
-                                highlightthickness=1, highlightcolor=HEADER_COLOR,
-                                highlightbackground=INPUT_BORDER)
+                                highlightthickness=1, highlightcolor=HEADER_COLOR(),
+                                highlightbackground=FRAME_BORDER(),
+                                bg=INPUT_BG(), fg=TEXT_BLACK())
         search_entry.pack(fill="x", ipady=4, pady=5)
         search_entry.focus()
 
-        result_frame = tk.Frame(pop, bg=BG_COLOR)
+        result_frame = tk.Frame(pop, bg=BG_COLOR())
         result_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
 
-        result_canvas = tk.Canvas(result_frame, bg=BG_COLOR, highlightthickness=0, height=150)
+        result_canvas = tk.Canvas(result_frame, bg=BG_COLOR(), highlightthickness=0, height=150)
         result_scrollbar = tk.Scrollbar(result_frame, orient="vertical", command=result_canvas.yview)
-        result_inner = tk.Frame(result_canvas, bg=BG_COLOR)
+        result_inner = tk.Frame(result_canvas, bg=BG_COLOR())
         result_inner.bind("<Configure>", lambda e: result_canvas.configure(
             scrollregion=result_canvas.bbox("all")))
         result_canvas.create_window((0, 0), window=result_inner, anchor="nw")
@@ -672,16 +753,16 @@ class MainWindow:
 
             results = search_groups(keyword)
             if not results:
-                tk.Label(result_inner, text="未找到匹配的群", bg=BG_COLOR,
-                         fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=20)
+                tk.Label(result_inner, text="未找到匹配的群", bg=BG_COLOR(),
+                         fg=TEXT_LIGHT_GRAY(), font=FONT_NORMAL).pack(pady=20)
                 return
 
             for g in results:
-                row = tk.Frame(result_inner, bg=CARD_BG, padx=10, pady=5)
+                row = tk.Frame(result_inner, bg=CARD_BG(), padx=10, pady=5)
                 row.pack(fill="x", pady=3)
                 tk.Label(row, text=f"{g['group_name']} ({g['group_id']}) {g['member_count']}人",
-                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
-                tk.Button(row, text="申请加入", bg=BTN_COLOR, fg="white",
+                         bg=CARD_BG(), font=FONT_NORMAL, fg=TEXT_BLACK()).pack(side="left")
+                tk.Button(row, text="申请加入", bg=BTN_COLOR(), fg="white",
                           font=FONT_SMALL, relief="flat", padx=8,
                           command=lambda gid=g["group_id"], gn=g["group_name"], r=row:
                             _do_join(gid, gn, r)).pack(side="right")
@@ -691,8 +772,8 @@ class MainWindow:
             if result == "ok":
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="✅ 已发送申请，等待群主审核", bg=CARD_BG,
-                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="✅ 已发送申请，等待群主审核", bg=CARD_BG(),
+                         fg=ONLINE_GREEN(), font=FONT_SMALL).pack(side="left")
             elif result == "already_member":
                 messagebox.showinfo("提示", "你已经是该群成员了！", parent=pop)
             elif result == "already_requested":
@@ -701,7 +782,7 @@ class MainWindow:
                 messagebox.showerror("错误", "群不存在或其他错误", parent=pop)
 
         search_entry.bind("<Return>", lambda e: do_search())
-        tk.Button(search_frame, text="搜索", bg=BTN_COLOR, fg="white",
+        tk.Button(search_frame, text="搜索", bg=BTN_COLOR(), fg="white",
                   font=FONT_BTN, command=do_search).pack(fill="x", ipady=4)
 
     def _show_group_management_popup(self):
@@ -728,39 +809,38 @@ class MainWindow:
         pop.resizable(False, False)
 
         tk.Label(pop, text=f"📋 {group_info['group_name']} ({self.current_group_id})",
-                 font=FONT_TITLE, bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+                 font=FONT_TITLE, bg=POPUP_HEADER_BG(), fg="white").pack(fill="x", ipady=10)
 
-        info_frame = tk.Frame(pop, bg=CARD_BG, padx=15, pady=10)
+        info_frame = tk.Frame(pop, bg=CARD_BG(), padx=15, pady=10)
         info_frame.pack(fill="x", padx=15, pady=10)
-        tk.Label(info_frame, text=f"群主：{group_info.get('creator', '')}", bg=CARD_BG,
-                 font=FONT_NORMAL, anchor="w").pack(fill="x")
-        tk.Label(info_frame, text=f"成员：{len(members)} 人", bg=CARD_BG,
-                 font=FONT_NORMAL, anchor="w").pack(fill="x")
-        tk.Label(info_frame, text=f"创建时间：{group_info.get('created_time', '')}", bg=CARD_BG,
-                 font=FONT_NORMAL, anchor="w").pack(fill="x")
+        tk.Label(info_frame, text=f"群主：{group_info.get('creator', '')}", bg=CARD_BG(),
+                 font=FONT_NORMAL, fg=TEXT_BLACK(), anchor="w").pack(fill="x")
+        tk.Label(info_frame, text=f"成员：{len(members)} 人", bg=CARD_BG(),
+                 font=FONT_NORMAL, fg=TEXT_BLACK(), anchor="w").pack(fill="x")
+        tk.Label(info_frame, text=f"创建时间：{group_info.get('created_time', '')}", bg=CARD_BG(),
+                 font=FONT_NORMAL, fg=TEXT_BLACK(), anchor="w").pack(fill="x")
 
-        # 入群申请管理
         tk.Label(pop, text="入群申请", font=("Microsoft YaHei", 11, "bold"),
-                 bg=BG_COLOR).pack(anchor="w", padx=15, pady=(5, 0))
-        pending_frame = tk.Frame(pop, bg=BG_COLOR)
+                 bg=BG_COLOR(), fg=TEXT_BLACK()).pack(anchor="w", padx=15, pady=(5, 0))
+        pending_frame = tk.Frame(pop, bg=BG_COLOR())
         pending_frame.pack(fill="x", padx=15, pady=5)
 
         pending_reqs = get_pending_join_requests(self.current_group_id)
         if not pending_reqs:
-            tk.Label(pending_frame, text="暂无入群申请", bg=BG_COLOR,
-                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=5)
+            tk.Label(pending_frame, text="暂无入群申请", bg=BG_COLOR(),
+                     fg=TEXT_LIGHT_GRAY(), font=FONT_SMALL).pack(anchor="w", pady=5)
         else:
             for req in pending_reqs:
-                row = tk.Frame(pending_frame, bg=CARD_BG, padx=10, pady=5)
+                row = tk.Frame(pending_frame, bg=CARD_BG(), padx=10, pady=5)
                 row.pack(fill="x", pady=3)
                 tk.Label(row, text=f"{req['from_account']} - {req['from_nickname']}",
-                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                         bg=CARD_BG(), font=FONT_NORMAL, fg=TEXT_BLACK()).pack(side="left")
                 if is_admin:
-                    tk.Button(row, text="同意", bg=ONLINE_GREEN, fg="white",
+                    tk.Button(row, text="同意", bg=BTN_GREEN(), fg="white",
                               font=FONT_SMALL, relief="flat", padx=6,
                               command=lambda a=req["from_account"], n=req["from_nickname"], r=row:
                                 _acc_join(a, n, r)).pack(side="right", padx=2)
-                    tk.Button(row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                    tk.Button(row, text="拒绝", bg=BTN_RED(), fg="white",
                               font=FONT_SMALL, relief="flat", padx=6,
                               command=lambda a=req["from_account"], r=row:
                                 _rej_join(a, r)).pack(side="right", padx=2)
@@ -770,8 +850,8 @@ class MainWindow:
             if ok:
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="✅ 已同意", bg=CARD_BG,
-                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="✅ 已同意", bg=CARD_BG(),
+                         fg=ONLINE_GREEN(), font=FONT_SMALL).pack(side="left")
                 self._refresh_group_list()
             else:
                 messagebox.showerror("操作失败", "同意入群失败，请重试", parent=pop)
@@ -781,18 +861,17 @@ class MainWindow:
             if ok:
                 for w in row_widget.winfo_children():
                     w.destroy()
-                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
-                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG(),
+                         fg=TEXT_GRAY(), font=FONT_SMALL).pack(side="left")
 
-        # 成员列表
         tk.Label(pop, text="成员列表", font=("Microsoft YaHei", 11, "bold"),
-                 bg=BG_COLOR).pack(anchor="w", padx=15, pady=(10, 0))
-        member_frame = tk.Frame(pop, bg=BG_COLOR)
+                 bg=BG_COLOR(), fg=TEXT_BLACK()).pack(anchor="w", padx=15, pady=(10, 0))
+        member_frame = tk.Frame(pop, bg=BG_COLOR())
         member_frame.pack(fill="both", expand=True, padx=15, pady=5)
 
-        member_canvas = tk.Canvas(member_frame, bg=BG_COLOR, highlightthickness=0, height=120)
+        member_canvas = tk.Canvas(member_frame, bg=BG_COLOR(), highlightthickness=0, height=120)
         member_scrollbar = tk.Scrollbar(member_frame, orient="vertical", command=member_canvas.yview)
-        member_inner = tk.Frame(member_canvas, bg=BG_COLOR)
+        member_inner = tk.Frame(member_canvas, bg=BG_COLOR())
         member_inner.bind("<Configure>", lambda e: member_canvas.configure(
             scrollregion=member_canvas.bbox("all")))
         member_canvas.create_window((0, 0), window=member_inner, anchor="nw")
@@ -802,11 +881,10 @@ class MainWindow:
 
         for m in members:
             role_text = "👑 群主" if m.get("role") == "owner" else ("🛡 管理员" if m.get("role") == "admin" else "成员")
-            row = tk.Frame(member_inner, bg=CARD_BG, padx=10, pady=4)
+            row = tk.Frame(member_inner, bg=CARD_BG(), padx=10, pady=4)
             row.pack(fill="x", pady=2)
             tk.Label(row, text=f"{m['nickname']} ({m['account']}) [{role_text}]",
-                     bg=CARD_BG, font=FONT_SMALL).pack(side="left")
-            # 群主可踢人/设置管理员
+                     bg=CARD_BG(), font=FONT_SMALL, fg=TEXT_BLACK()).pack(side="left")
             if is_owner and m["account"] != self.account:
                 def _kick(target_account, target_nickname):
                     confirm = messagebox.askyesno("确认踢出",
@@ -817,12 +895,10 @@ class MainWindow:
                             messagebox.showinfo("成功", f"已将 {target_nickname} 踢出群", parent=pop)
                             pop.destroy()
                             self._refresh_group_list()
-                            if self.current_group_id:
-                                self._refresh_group_chat_display()
                         else:
                             messagebox.showerror("失败", "踢出操作失败", parent=pop)
 
-                tk.Button(row, text="踢出", bg=LOGOUT_BG, fg="white",
+                tk.Button(row, text="踢出", bg=BTN_RED(), fg="white",
                           font=FONT_SMALL, relief="flat", padx=4,
                           command=lambda a=m["account"], n=m["nickname"]: _kick(a, n)).pack(side="right", padx=2)
 
@@ -842,18 +918,17 @@ class MainWindow:
 
                 if m.get("role") in ("member", "admin"):
                     btn_text = "取消管理" if m.get("role") == "admin" else "设为管理"
-                    tk.Button(row, text=btn_text, bg=BTN_COLOR, fg="white",
+                    tk.Button(row, text=btn_text, bg=BTN_COLOR(), fg="white",
                               font=FONT_SMALL, relief="flat", padx=4,
                               command=lambda a=m["account"], n=m["nickname"], r=m.get("role"):
                                 _toggle_admin(a, n, r)).pack(side="right", padx=2)
 
-        # 群主可解散群 / 转让群主
         if is_owner:
-            op_frame = tk.Frame(pop, bg=BG_COLOR)
+            op_frame = tk.Frame(pop, bg=BG_COLOR())
             op_frame.pack(fill="x", padx=15, pady=10)
-            tk.Button(op_frame, text="🗑 解散群", bg=LOGOUT_BG, fg="white",
+            tk.Button(op_frame, text="🗑 解散群", bg=BTN_RED(), fg="white",
                       font=FONT_BTN, command=self._do_disband_group).pack(side="left", padx=5)
-            tk.Button(op_frame, text="🔁 转让群主", bg=HEADER_COLOR, fg="white",
+            tk.Button(op_frame, text="🔁 转让群主", bg=HEADER_COLOR(), fg="white",
                       font=FONT_BTN, command=lambda: self._do_transfer_owner(pop)).pack(side="right", padx=5)
 
     def _do_disband_group(self):
@@ -888,9 +963,10 @@ class MainWindow:
         trans_pop.resizable(False, False)
 
         tk.Label(trans_pop, text="选择新群主", font=FONT_TITLE,
-                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+                 bg=POPUP_HEADER_BG(), fg="white").pack(fill="x", ipady=10)
 
-        listbox = tk.Listbox(trans_pop, font=FONT_NORMAL)
+        listbox = tk.Listbox(trans_pop, font=FONT_NORMAL,
+                             bg=CARD_BG(), fg=TEXT_BLACK())
         listbox.pack(fill="both", expand=True, padx=20, pady=15)
 
         for m in members:
@@ -915,7 +991,7 @@ class MainWindow:
                 else:
                     messagebox.showerror("失败", "转让失败，请重试")
 
-        tk.Button(trans_pop, text="确认转让", bg=BTN_COLOR, fg="white",
+        tk.Button(trans_pop, text="确认转让", bg=BTN_COLOR(), fg="white",
                   font=FONT_BTN, command=do_transfer).pack(pady=10)
 
     def load_target_group(self, event):
@@ -932,7 +1008,6 @@ class MainWindow:
         self.current_group_name = group_info["group_name"]
         self.group_chat_title.config(text=f"💬 {group_info['group_name']} ({group_info['group_id']})")
 
-        # 显示群管理按钮
         self.group_mgmt_btn.pack(side="right", padx=10)
 
         self._refresh_group_chat_display()
@@ -1000,38 +1075,50 @@ class MainWindow:
         pop.resizable(False, False)
         pop.grab_set()
 
-        tk.Label(pop, text="头像：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(15, 0))
+        tk.Label(pop, text="头像：", font=FONT_NORMAL, bg=BG_COLOR(),
+                 fg=TEXT_BLACK()).pack(anchor="w", padx=30, pady=(15, 0))
         avatar_var = tk.StringVar(value=self.user.get("avatar", "🐧"))
         avatars = ["🐧", "🐶", "🐱", "🐼", "🐨", "🦊", "🐰", "🐯"]
-        avatar_frame = tk.Frame(pop)
+        avatar_frame = tk.Frame(pop, bg=BG_COLOR())
         avatar_frame.pack(pady=3)
         for ava in avatars:
             tk.Radiobutton(avatar_frame, text=ava, variable=avatar_var, value=ava,
-                           font=("Segoe UI Emoji", 16)).pack(side="left")
+                           font=("Segoe UI Emoji", 16), bg=BG_COLOR(),
+                           fg=TEXT_BLACK(), selectcolor=BG_COLOR()).pack(side="left")
 
-        tk.Label(pop, text="昵称：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        tk.Label(pop, text="昵称：", font=FONT_NORMAL, bg=BG_COLOR(),
+                 fg=TEXT_BLACK()).pack(anchor="w", padx=30, pady=(5, 0))
         nick_var = tk.StringVar(value=self.user["nickname"])
-        tk.Entry(pop, textvariable=nick_var, width=30, font=FONT_NORMAL).pack(pady=3)
+        tk.Entry(pop, textvariable=nick_var, width=30, font=FONT_NORMAL,
+                 bg=INPUT_BG(), fg=TEXT_BLACK()).pack(pady=3)
 
-        tk.Label(pop, text="性别：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        tk.Label(pop, text="性别：", font=FONT_NORMAL, bg=BG_COLOR(),
+                 fg=TEXT_BLACK()).pack(anchor="w", padx=30, pady=(5, 0))
         gender_var = tk.StringVar(value=self.user.get("gender", "保密"))
-        gender_frame = tk.Frame(pop)
+        gender_frame = tk.Frame(pop, bg=BG_COLOR())
         gender_frame.pack(pady=3)
         for g in ["男", "女", "保密"]:
             tk.Radiobutton(gender_frame, text=g, variable=gender_var, value=g,
-                           font=FONT_NORMAL).pack(side="left", padx=5)
+                           font=FONT_NORMAL, bg=BG_COLOR(), fg=TEXT_BLACK(),
+                           selectcolor=BG_COLOR()).pack(side="left", padx=5)
 
-        tk.Label(pop, text="年龄：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        tk.Label(pop, text="年龄：", font=FONT_NORMAL, bg=BG_COLOR(),
+                 fg=TEXT_BLACK()).pack(anchor="w", padx=30, pady=(5, 0))
         age_var = tk.StringVar(value=self.user.get("age", "未知"))
-        tk.Entry(pop, textvariable=age_var, width=30, font=FONT_NORMAL).pack(pady=3)
+        tk.Entry(pop, textvariable=age_var, width=30, font=FONT_NORMAL,
+                 bg=INPUT_BG(), fg=TEXT_BLACK()).pack(pady=3)
 
-        tk.Label(pop, text="城市：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        tk.Label(pop, text="城市：", font=FONT_NORMAL, bg=BG_COLOR(),
+                 fg=TEXT_BLACK()).pack(anchor="w", padx=30, pady=(5, 0))
         city_var = tk.StringVar(value=self.user.get("city", "未知"))
-        tk.Entry(pop, textvariable=city_var, width=30, font=FONT_NORMAL).pack(pady=3)
+        tk.Entry(pop, textvariable=city_var, width=30, font=FONT_NORMAL,
+                 bg=INPUT_BG(), fg=TEXT_BLACK()).pack(pady=3)
 
-        tk.Label(pop, text="个性签名：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        tk.Label(pop, text="个性签名：", font=FONT_NORMAL, bg=BG_COLOR(),
+                 fg=TEXT_BLACK()).pack(anchor="w", padx=30, pady=(5, 0))
         sign_var = tk.StringVar(value=self.user.get("signature", ""))
-        tk.Entry(pop, textvariable=sign_var, width=30, font=FONT_NORMAL).pack(pady=3)
+        tk.Entry(pop, textvariable=sign_var, width=30, font=FONT_NORMAL,
+                 bg=INPUT_BG(), fg=TEXT_BLACK()).pack(pady=3)
 
         def save_info():
             try:
@@ -1069,7 +1156,7 @@ class MainWindow:
             except Exception as e:
                 messagebox.showerror("保存失败", f"修改资料时发生错误：{str(e)}")
 
-        tk.Button(pop, text="保存修改", bg=BTN_COLOR, fg="white",
+        tk.Button(pop, text="保存修改", bg=BTN_COLOR(), fg="white",
                   font=FONT_BTN, command=save_info).pack(pady=15)
 
     # ==================== 动态（朋友圈）页面 ====================
@@ -1078,64 +1165,64 @@ class MainWindow:
         self.current_page = "moments"
         self.clear_main_container()
 
-        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR(), height=120)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Label(header, text="朋友圈", fg="white", bg=HEADER_COLOR,
+        tk.Label(header, text="朋友圈", fg="white", bg=HEADER_COLOR(),
                  font=("Microsoft YaHei", 28, "bold")).place(x=20, y=15)
         tk.Label(header, text=f"{self.user['nickname']} 的动态",
-                 fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=65)
-        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR,
+                 fg="#E8F4FD", bg=HEADER_COLOR(), font=FONT_SUBTITLE).place(x=20, y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR(),
                   font=("Arial", 16), relief="flat",
                   command=self.root.quit).place(x=370, y=10)
 
-        post_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=10)
+        post_frame = tk.Frame(self.main_container, bg=CARD_BG(), padx=15, pady=10)
         post_frame.pack(fill="x", padx=20, pady=10)
 
-        tk.Label(post_frame, text="发动态", bg=CARD_BG, fg=TEXT_BLACK,
+        tk.Label(post_frame, text="发动态", bg=CARD_BG(), fg=TEXT_BLACK(),
                  font=("Microsoft YaHei", 12, "bold")).pack(anchor="w")
 
-        input_row = tk.Frame(post_frame, bg=CARD_BG)
+        input_row = tk.Frame(post_frame, bg=CARD_BG())
         input_row.pack(fill="x", pady=(5, 0))
 
         self.moment_input = tk.Entry(input_row, font=FONT_NORMAL,
                                      highlightthickness=1,
-                                     highlightcolor=HEADER_COLOR,
-                                     highlightbackground=INPUT_BORDER)
+                                     highlightcolor=HEADER_COLOR(),
+                                     highlightbackground=FRAME_BORDER(),
+                                     bg=INPUT_BG(), fg=TEXT_BLACK())
         self.moment_input.pack(side="left", fill="x", expand=True, ipady=5)
         self.moment_input.bind("<Return>", lambda e: self._do_publish_moment())
 
         self.photo_path_var = tk.StringVar()
         photo_btn = tk.Button(
             input_row, text="📷", font=("Segoe UI Emoji", 14),
-            bg=CARD_BG, relief="flat", command=self._select_photo
+            bg=CARD_BG(), relief="flat", command=self._select_photo
         )
         photo_btn.pack(side="right", padx=(4, 4))
         self.photo_label = tk.Label(
-            input_row, text="", bg=CARD_BG, fg=TEXT_LIGHT_GRAY,
+            input_row, text="", bg=CARD_BG(), fg=TEXT_LIGHT_GRAY(),
             font=FONT_SMALL, width=10, anchor="e"
         )
         self.photo_label.pack(side="right")
 
-        # 视频选择相关
         self.moment_video_path = ""
         self.video_label_var = tk.StringVar(value="")
         tk.Label(input_row, textvariable=self.video_label_var,
-                 bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(side="right", padx=(0, 2))
+                 bg=CARD_BG(), fg=TEXT_LIGHT_GRAY(), font=FONT_SMALL).pack(side="right", padx=(0, 2))
 
         tk.Button(input_row, text="🎬", font=("Segoe UI Emoji", 12),
-                  bg=CARD_BG, relief="flat",
+                  bg=CARD_BG(), relief="flat",
                   command=self._select_moment_video).pack(side="right", padx=2)
 
-        tk.Button(input_row, text="发布", bg=BTN_COLOR, fg="white",
+        tk.Button(input_row, text="发布", bg=BTN_COLOR(), fg="white",
                   command=self._do_publish_moment).pack(side="right", padx=(8, 0))
 
-        list_container = tk.Frame(self.main_container, bg=BG_COLOR)
+        list_container = tk.Frame(self.main_container, bg=BG_COLOR())
         list_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
-        canvas = tk.Canvas(list_container, bg=BG_COLOR, highlightthickness=0)
+        canvas = tk.Canvas(list_container, bg=BG_COLOR(), highlightthickness=0)
         scrollbar = tk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
-        self.moments_scroll_frame = tk.Frame(canvas, bg=BG_COLOR)
+        self.moments_scroll_frame = tk.Frame(canvas, bg=BG_COLOR())
 
         self.moments_scroll_frame.bind(
             "<Configure>",
@@ -1168,7 +1255,6 @@ class MainWindow:
             self.photo_label.config(text=f"📎{name}")
 
     def _select_moment_video(self):
-        """弹出文件选择对话框选择视频文件"""
         file_path = filedialog.askopenfilename(
             title="选择视频文件",
             parent=self.root,
@@ -1214,7 +1300,7 @@ class MainWindow:
         if not moments:
             empty_label = tk.Label(
                 self.moments_scroll_frame, text="暂无动态，快来发第一条吧 ✨",
-                bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL, pady=40
+                bg=BG_COLOR(), fg=TEXT_LIGHT_GRAY(), font=FONT_NORMAL, pady=40
             )
             empty_label.pack()
             return
@@ -1223,42 +1309,40 @@ class MainWindow:
             self._render_moment_card(m)
 
     def _render_moment_card(self, m):
-        card = tk.Frame(self.moments_scroll_frame, bg=CARD_BG, padx=12, pady=10)
+        card = tk.Frame(self.moments_scroll_frame, bg=CARD_BG(), padx=12, pady=10)
         card.pack(fill="x", pady=6)
 
-        top_row = tk.Frame(card, bg=CARD_BG)
+        top_row = tk.Frame(card, bg=CARD_BG())
         top_row.pack(fill="x")
 
         avatar_text = m.get("avatar", "🐧")
         tk.Label(top_row, text=avatar_text, font=("Segoe UI Emoji", 24),
-                 bg=CARD_BG).pack(side="left", padx=(0, 8))
+                 bg=CARD_BG()).pack(side="left", padx=(0, 8))
 
-        info_col = tk.Frame(top_row, bg=CARD_BG)
+        info_col = tk.Frame(top_row, bg=CARD_BG())
         info_col.pack(side="left", fill="x", expand=True)
 
-        tk.Label(info_col, text=m["nickname"], bg=CARD_BG, fg=HEADER_COLOR,
+        tk.Label(info_col, text=m["nickname"], bg=CARD_BG(), fg=HEADER_COLOR(),
                  font=("Microsoft YaHei", 11, "bold"), anchor="w").pack(fill="x")
 
-        tk.Label(info_col, text=m["time"], bg=CARD_BG, fg=TEXT_LIGHT_GRAY,
+        tk.Label(info_col, text=m["time"], bg=CARD_BG(), fg=TEXT_LIGHT_GRAY(),
                  font=FONT_SMALL, anchor="w").pack(fill="x")
 
-        content_label = tk.Label(card, text=m["content"], bg=CARD_BG, fg=TEXT_BLACK,
+        content_label = tk.Label(card, text=m["content"], bg=CARD_BG(), fg=TEXT_BLACK(),
                                  font=FONT_NORMAL, anchor="w", justify="left", wraplength=380)
         content_label.pack(fill="x", pady=(8, 5))
 
-        # 显示视频附件
         video_path = m.get("video", "")
         if video_path and os.path.isfile(video_path):
             video_frame = tk.Frame(card, bg="#F0F0F0", padx=8, pady=6)
             video_frame.pack(fill="x", pady=(0, 5))
             tk.Label(video_frame, text="🎬 视频附件",
-                     bg="#F0F0F0", fg=HEADER_COLOR,
+                     bg="#F0F0F0", fg=HEADER_COLOR(),
                      font=("Microsoft YaHei", 10, "bold")).pack(side="left")
-            tk.Button(video_frame, text="▶ 播放", bg=BTN_COLOR, fg="white",
+            tk.Button(video_frame, text="▶ 播放", bg=BTN_COLOR(), fg="white",
                       font=FONT_SMALL, relief="flat", padx=10,
                       command=lambda p=video_path: self._play_video(p)).pack(side="right")
 
-        # 显示图片附件
         photo_name = m.get("photo", "")
         if photo_name:
             photo_full = os.path.join(MOMENTS_PHOTOS_DIR, photo_name)
@@ -1267,38 +1351,37 @@ class MainWindow:
                     img = Image.open(photo_full)
                     img.thumbnail((260, 400), Image.LANCZOS)
                     tk_img = ImageTk.PhotoImage(img)
-                    img_label = tk.Label(card, image=tk_img, bg=CARD_BG)
+                    img_label = tk.Label(card, image=tk_img, bg=CARD_BG())
                     img_label.image = tk_img
                     img_label.pack(pady=(0, 5))
                     img_label.bind("<Button-1>", lambda e, p=photo_full: self._show_photo_popup(p))
                 except Exception:
                     pass
 
-        action_row = tk.Frame(card, bg=CARD_BG)
+        action_row = tk.Frame(card, bg=CARD_BG())
         action_row.pack(fill="x")
 
         liked = self.account in m.get("liked_accounts", [])
         like_text = f"❤️ {m['likes']}" if liked else f"🤍 {m['likes']}"
         like_btn = tk.Button(
-            action_row, text=like_text, bg=CARD_BG, relief="flat",
-            font=FONT_SMALL, fg=TEXT_GRAY,
+            action_row, text=like_text, bg=CARD_BG(), relief="flat",
+            font=FONT_SMALL, fg=TEXT_GRAY(),
             command=lambda mid=m["id"]: self._do_toggle_like(mid)
         )
         like_btn.pack(side="left", padx=(0, 10))
 
         if m.get("account") == self.account:
             tk.Button(
-                action_row, text="🗑 删除", bg=CARD_BG, relief="flat",
+                action_row, text="🗑 删除", bg=CARD_BG(), relief="flat",
                 font=FONT_SMALL, fg="red",
                 command=lambda mid=m["id"]: self._do_delete_moment(mid)
             ).pack(side="left")
 
     def _play_video(self, video_path):
-        """使用系统默认播放器打开视频文件"""
         try:
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 os.startfile(video_path)
-            elif os.name == 'posix':  # macOS / Linux
+            elif os.name == 'posix':
                 subprocess.call(('open' if sys.platform == 'darwin' else 'xdg-open', video_path))
         except Exception as e:
             messagebox.showerror("播放失败", f"无法打开视频文件：{str(e)}")
@@ -1337,65 +1420,65 @@ class MainWindow:
         self.current_page = "checkin"
         self.clear_main_container()
 
-        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR(), height=120)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Label(header, text="每日打卡", fg="white", bg=HEADER_COLOR,
+        tk.Label(header, text="每日打卡", fg="white", bg=HEADER_COLOR(),
                  font=("Microsoft YaHei", 28, "bold")).place(x=20, y=15)
         tk.Label(header, text=f"{self.user['nickname']}，坚持就是胜利！",
-                 fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=65)
-        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR,
+                 fg="#E8F4FD", bg=HEADER_COLOR(), font=FONT_SUBTITLE).place(x=20, y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR(),
                   font=("Arial", 16), relief="flat",
                   command=self.root.quit).place(x=370, y=10)
 
         status = get_checkin_status(self.account)
 
-        stat_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        stat_frame = tk.Frame(self.main_container, bg=CARD_BG(), padx=15, pady=15)
         stat_frame.pack(fill="x", padx=20, pady=15)
 
-        tk.Label(stat_frame, text="打卡统计", bg=CARD_BG, fg=TEXT_BLACK,
+        tk.Label(stat_frame, text="打卡统计", bg=CARD_BG(), fg=TEXT_BLACK(),
                  font=("Microsoft YaHei", 14, "bold")).pack(anchor="w", pady=(0, 10))
 
-        stats_row = tk.Frame(stat_frame, bg=CARD_BG)
+        stats_row = tk.Frame(stat_frame, bg=CARD_BG())
         stats_row.pack(fill="x", pady=5)
 
-        total_frame = tk.Frame(stats_row, bg=CARD_BG)
+        total_frame = tk.Frame(stats_row, bg=CARD_BG())
         total_frame.pack(side="left", expand=True)
-        tk.Label(total_frame, text=f"{status['total']}", fg=HEADER_COLOR,
-                 bg=CARD_BG, font=("Microsoft YaHei", 36, "bold")).pack()
-        tk.Label(total_frame, text="总打卡天数", bg=CARD_BG, fg=TEXT_GRAY,
+        tk.Label(total_frame, text=f"{status['total']}", fg=HEADER_COLOR(),
+                 bg=CARD_BG(), font=("Microsoft YaHei", 36, "bold")).pack()
+        tk.Label(total_frame, text="总打卡天数", bg=CARD_BG(), fg=TEXT_GRAY(),
                  font=FONT_SMALL).pack()
 
-        streak_frame = tk.Frame(stats_row, bg=CARD_BG)
+        streak_frame = tk.Frame(stats_row, bg=CARD_BG())
         streak_frame.pack(side="left", expand=True)
         tk.Label(streak_frame, text=f"{status['streak']}", fg="#FF6B35",
-                 bg=CARD_BG, font=("Microsoft YaHei", 36, "bold")).pack()
-        tk.Label(streak_frame, text="连续打卡天数", bg=CARD_BG, fg=TEXT_GRAY,
+                 bg=CARD_BG(), font=("Microsoft YaHei", 36, "bold")).pack()
+        tk.Label(streak_frame, text="连续打卡天数", bg=CARD_BG(), fg=TEXT_GRAY(),
                  font=FONT_SMALL).pack()
 
-        self.checkin_btn_frame = tk.Frame(self.main_container, bg=BG_COLOR)
+        self.checkin_btn_frame = tk.Frame(self.main_container, bg=BG_COLOR())
         self.checkin_btn_frame.pack(fill="x", padx=20, pady=10)
 
         if status["checked_in"]:
             btn = tk.Button(
                 self.checkin_btn_frame, text="✅ 今日已打卡",
-                bg="#52C41A", fg="white", font=FONT_BTN, relief="flat",
+                bg=BTN_GREEN(), fg="white", font=FONT_BTN, relief="flat",
                 state="disabled", padx=20, pady=10
             )
             btn.pack()
             tk.Label(self.checkin_btn_frame, text="太棒了，明天继续加油！",
-                     bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(pady=5)
+                     bg=BG_COLOR(), fg=TEXT_LIGHT_GRAY(), font=FONT_SMALL).pack(pady=5)
         else:
             tk.Label(self.checkin_btn_frame, text="今天还没有打卡哦，快来打卡吧！",
-                     bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=(0, 10))
+                     bg=BG_COLOR(), fg=TEXT_LIGHT_GRAY(), font=FONT_NORMAL).pack(pady=(0, 10))
             btn = tk.Button(
                 self.checkin_btn_frame, text="🎯 立即打卡",
-                bg=BTN_COLOR, fg="white", font=FONT_BTN, relief="flat",
+                bg=BTN_COLOR(), fg="white", font=FONT_BTN, relief="flat",
                 padx=30, pady=12, command=self._do_checkin_action
             )
             btn.pack()
 
-        cal_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        cal_frame = tk.Frame(self.main_container, bg=CARD_BG(), padx=15, pady=15)
         cal_frame.pack(fill="x", padx=20, pady=15)
 
         today = datetime.now()
@@ -1405,17 +1488,17 @@ class MainWindow:
         month_records = get_month_records(self.account, year, month)
 
         tk.Label(cal_frame, text=f"{year}年{month}月打卡日历",
-                 bg=CARD_BG, fg=TEXT_BLACK,
+                 bg=CARD_BG(), fg=TEXT_BLACK(),
                  font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
 
-        weekday_frame = tk.Frame(cal_frame, bg=CARD_BG)
+        weekday_frame = tk.Frame(cal_frame, bg=CARD_BG())
         weekday_frame.pack(fill="x")
         weekdays = ["一", "二", "三", "四", "五", "六", "日"]
         for wd in weekdays:
-            tk.Label(weekday_frame, text=wd, bg=CARD_BG, fg=TEXT_GRAY,
+            tk.Label(weekday_frame, text=wd, bg=CARD_BG(), fg=TEXT_GRAY(),
                      font=FONT_SMALL, width=4, anchor="center").pack(side="left", padx=4)
 
-        grid_frame = tk.Frame(cal_frame, bg=CARD_BG)
+        grid_frame = tk.Frame(cal_frame, bg=CARD_BG())
         grid_frame.pack(fill="x", pady=(5, 0))
 
         first_weekday = datetime(year, month, 1).weekday()
@@ -1423,7 +1506,7 @@ class MainWindow:
 
         col = 0
         for _ in range(first_weekday_sun):
-            tk.Label(grid_frame, text="", bg=CARD_BG, width=4).pack(side="left", padx=4)
+            tk.Label(grid_frame, text="", bg=CARD_BG(), width=4).pack(side="left", padx=4)
             col += 1
 
         for day in range(1, days_in_month + 1):
@@ -1432,19 +1515,19 @@ class MainWindow:
 
             if is_checked:
                 day_label = tk.Label(
-                    grid_frame, text=f"{day}✅", bg="#E8F5E9", fg="#2E7D32",
+                    grid_frame, text=f"{day}✅", bg=CAL_CHECKED_BG(), fg=CAL_CHECKED_FG(),
                     font=FONT_SMALL, width=4, relief="solid", bd=1
                 )
             else:
                 is_today = (day == today.day)
                 if is_today:
                     day_label = tk.Label(
-                        grid_frame, text=str(day), bg="#E3F2FD", fg=HEADER_COLOR,
+                        grid_frame, text=str(day), bg=CAL_TODAY_BG(), fg=CAL_TODAY_FG(),
                         font=FONT_SMALL, width=4, relief="solid", bd=1
                     )
                 else:
                     day_label = tk.Label(
-                        grid_frame, text=str(day), bg=CARD_BG, fg=TEXT_BLACK,
+                        grid_frame, text=str(day), bg=CARD_BG(), fg=TEXT_BLACK(),
                         font=FONT_SMALL, width=4, bd=1
                     )
             day_label.pack(side="left", padx=4, pady=2)

@@ -40,35 +40,35 @@ class RegisterWindow:
         self.top.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build_header(self):
-        header = tk.Frame(self.top, bg=HEADER_COLOR, height=100)
+        header = tk.Frame(self.top, bg=HEADER_COLOR(), height=100)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Label(header, text="注册QQ账号", fg="white", bg=HEADER_COLOR, font=FONT_TITLE).pack(pady=30)
+        tk.Label(header, text="注册QQ账号", fg="white", bg=HEADER_COLOR(), font=FONT_TITLE).pack(pady=30)
 
     def _create_input_row(self, parent_frame, label_text, var, show=""):
-        row = tk.Frame(parent_frame, bg=BG_COLOR)
+        row = tk.Frame(parent_frame, bg=BG_COLOR())
         row.pack(fill="x", pady=(0, 10))
-        tk.Label(row, text=label_text, bg=BG_COLOR, fg=TEXT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        tk.Label(row, text=label_text, bg=BG_COLOR(), fg=TEXT_GRAY(), font=FONT_SMALL).pack(anchor="w")
         entry = tk.Entry(
             row, textvariable=var, show=show, font=FONT_NORMAL,
             relief="flat", bd=0, highlightthickness=1,
-            highlightcolor=INPUT_HIGHLIGHT, highlightbackground=INPUT_BORDER
+            highlightcolor=INPUT_HIGHLIGHT(), highlightbackground=INPUT_BORDER()
         )
         entry.pack(fill="x", ipady=6, pady=(2, 0))
 
     def _build_form(self):
-        form = tk.Frame(self.top, bg=BG_COLOR)
+        form = tk.Frame(self.top, bg=BG_COLOR())
         form.pack(fill="x", padx=40, pady=(15, 10))
         self._create_input_row(form, "账号", self.reg_account_var)
         self._create_input_row(form, "昵称", self.reg_nickname_var)
         self._create_input_row(form, "密码（6-16位）", self.reg_password_var, show="●")
-        confirm_frame = tk.Frame(form, bg=BG_COLOR)
+        confirm_frame = tk.Frame(form, bg=BG_COLOR())
         confirm_frame.pack(fill="x")
-        tk.Label(confirm_frame, text="确认密码", bg=BG_COLOR, fg=TEXT_GRAY, font=FONT_SMALL).pack(anchor="w")
+        tk.Label(confirm_frame, text="确认密码", bg=BG_COLOR(), fg=TEXT_GRAY(), font=FONT_SMALL).pack(anchor="w")
         confirm_entry = tk.Entry(
             confirm_frame, textvariable=self.reg_confirm_var, show="●", font=FONT_NORMAL,
             relief="flat", bd=0, highlightthickness=1,
-            highlightcolor=INPUT_HIGHLIGHT, highlightbackground=INPUT_BORDER
+            highlightcolor=INPUT_HIGHLIGHT(), highlightbackground=INPUT_BORDER()
         )
         confirm_entry.pack(fill="x", ipady=6, pady=(2, 0))
         confirm_entry.bind("<Return>", lambda e: self._on_register())
@@ -76,7 +76,7 @@ class RegisterWindow:
     def _build_register_btn(self):
         tk.Button(
             self.top, text="立即注册", command=self._on_register,
-            bg=BTN_COLOR, fg="white", activebackground=BTN_ACTIVE, activeforeground="white",
+            bg=BTN_COLOR(), fg="white", activebackground=BTN_ACTIVE(), activeforeground="white",
             font=FONT_BTN, relief="flat", cursor="hand2", bd=0
         ).pack(fill="x", padx=40, ipady=8, pady=(5, 0))
 

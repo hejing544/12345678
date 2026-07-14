@@ -1,22 +1,110 @@
 # -*- coding: utf-8 -*-
 """全局配置常量 — 颜色、字体、尺寸、文件路径、默认用户"""
+from theme import get_theme, set_theme, toggle_theme, get_theme_mode
 
-# ====================== 颜色常量 ======================
-HEADER_COLOR = "#12B7F5"
-BG_COLOR = "#F5F6FA"
-BTN_COLOR = "#12B7F5"
-BTN_ACTIVE = "#0E9BD6"
-CARD_BG = "#FFFFFF"
-LOGOUT_BG = "#FF4D4F"
-LOGOUT_ACTIVE = "#D9363E"
+# ====================== 颜色常量（动态从 theme 读取） ======================
+def HEADER_COLOR():
+    return get_theme()["HEADER_COLOR"]
 
-INPUT_HIGHLIGHT = HEADER_COLOR
-INPUT_BORDER = "#DDDDDD"
-TEXT_GRAY = "#666666"
-TEXT_LIGHT_GRAY = "#999999"
-TEXT_BLACK = "#333333"
-ONLINE_GREEN = "#52C41A"
-DIVIDER_GRAY = "#EEEEEE"
+def BG_COLOR():
+    return get_theme()["BG_COLOR"]
+
+def BTN_COLOR():
+    return get_theme()["BTN_COLOR"]
+
+def BTN_ACTIVE():
+    return get_theme()["BTN_ACTIVE"]
+
+def CARD_BG():
+    return get_theme()["CARD_BG"]
+
+def LOGOUT_BG():
+    return get_theme()["LOGOUT_BG"]
+
+def LOGOUT_ACTIVE():
+    return get_theme()["LOGOUT_ACTIVE"]
+
+def INPUT_HIGHLIGHT():
+    return get_theme()["INPUT_HIGHLIGHT"]
+
+def INPUT_BORDER():
+    return get_theme()["INPUT_BORDER"]
+
+def TEXT_GRAY():
+    return get_theme()["TEXT_GRAY"]
+
+def TEXT_LIGHT_GRAY():
+    return get_theme()["TEXT_LIGHT_GRAY"]
+
+def TEXT_BLACK():
+    return get_theme()["TEXT_BLACK"]
+
+def ONLINE_GREEN():
+    return get_theme()["ONLINE_GREEN"]
+
+def DIVIDER_GRAY():
+    return get_theme()["DIVIDER_GRAY"]
+
+# 新增主题相关的颜色
+def SIDEBAR_BG():
+    return get_theme()["SIDEBAR_BG"]
+
+def SIDEBAR_BTN_BG():
+    return get_theme()["SIDEBAR_BTN_BG"]
+
+def SIDEBAR_TEXT():
+    return get_theme()["SIDEBAR_TEXT"]
+
+def CHAT_TITLE_BG():
+    return get_theme()["CHAT_TITLE_BG"]
+
+def CHAT_AREA_BG():
+    return get_theme()["CHAT_AREA_BG"]
+
+def MSG_DISPLAY_BG():
+    return get_theme()["MSG_DISPLAY_BG"]
+
+def LEFT_BOX_BG():
+    return get_theme()["LEFT_BOX_BG"]
+
+def LEFT_BOX_TEXT():
+    return get_theme()["LEFT_BOX_TEXT"]
+
+def POPUP_HEADER_BG():
+    return get_theme()["POPUP_HEADER_BG"]
+
+def FRAME_BORDER():
+    return get_theme()["FRAME_BORDER"]
+
+def INPUT_BG():
+    return get_theme()["INPUT_BG"]
+
+def BTN_GREEN():
+    return get_theme()["BTN_GREEN"]
+
+def BTN_RED():
+    return get_theme()["BTN_RED"]
+
+def CAL_CHECKED_BG():
+    return get_theme()["CAL_CHECKED_BG"]
+
+def CAL_CHECKED_FG():
+    return get_theme()["CAL_CHECKED_FG"]
+
+def CAL_TODAY_BG():
+    return get_theme()["CAL_TODAY_BG"]
+
+def CAL_TODAY_FG():
+    return get_theme()["CAL_TODAY_FG"]
+
+def BINDING_LABEL_FG():
+    return get_theme()["BINDING_LABEL_FG"]
+
+def TEXT_WHITE():
+    return get_theme()["TEXT_WHITE"]
+
+def TEXT_PRIMARY():
+    return get_theme()["TEXT_PRIMARY"]
 
 # ====================== 窗口尺寸 ======================
 LOGIN_W = 380
