@@ -1,0 +1,29 @@
+{
+  "G001": {
+    "group_id": "G001",
+    "group_name": "开开心心",
+    "creator": "123",
+    "members": [
+      {
+        "account": "123",
+        "nickname": "1",
+        "role": "owner",
+        "join_time": "2026-07-14 22:35:22"
+      },
+      {
+        "account": "666",
+        "nickname": "h",
+        "role": "admin",
+        "join_time": "2026-07-14 22:36:36"
+      },
+      {
+        "account": "1234",
+        "nickname": "2",
+        "role": "member",
+        "join_time": "2026-07-14 22:41:34"
+      }
+    ],
+    "pending_join": [],
+    "created_time": "2026-07-14 22:35:22"
+  }
+}

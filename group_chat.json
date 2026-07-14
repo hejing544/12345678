@@ -1,0 +1,28 @@
+{
+  "G001": [
+    {
+      "sender_account": "123",
+      "sender_nickname": "1",
+      "content": "12",
+      "time": "22:36"
+    },
+    {
+      "sender_account": "666",
+      "sender_nickname": "h",
+      "content": "456",
+      "time": "22:37"
+    },
+    {
+      "sender_account": "123",
+      "sender_nickname": "1",
+      "content": "1",
+      "time": "22:41"
+    },
+    {
+      "sender_account": "1234",
+      "sender_nickname": "2",
+      "content": "哈哈哈",
+      "time": "22:41"
+    }
+  ]
+}

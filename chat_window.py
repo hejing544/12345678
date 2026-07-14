@@ -25,6 +25,12 @@ import subprocess
 import os
 import sys
 from PIL import Image, ImageTk
+from group_db import (
+    create_group, get_my_groups, search_groups, get_group_info, get_group_members,
+    send_join_request, get_pending_join_requests, accept_join_request,
+    reject_join_request, remove_group_member, disband_group,
+    send_group_message, load_group_conversation, is_group_member,
+)
 from checkin_db import (
     get_checkin_status, do_checkin, get_month_records,
 )
@@ -47,6 +53,12 @@ class MainWindow:
             self.last_msg_count = 0
             self.polling_id = None
 
+            # 群聊相关状态
+            self.current_group_id = None
+            self.current_group_name = None
+            self.group_last_msg_count = 0
+            self.group_polling_id = None
+
             self.level_stars = self.user.get("level_stars", 0)
             self.level_timer_id = None
             self._start_level_timer()
@@ -59,6 +71,8 @@ class MainWindow:
                       command=self.show_home_page).pack(pady=8)
             tk.Button(self.side_frame, text="开始聊天", width=12, height=2,
                       command=self.show_chat_page).pack(pady=8)
+            tk.Button(self.side_frame, text="群聊", width=12, height=2,
+                      command=self.show_group_page).pack(pady=8)
             tk.Button(self.side_frame, text="朋友圈", width=12, height=2,
                        command=self.show_moments_page).pack(pady=8)
             tk.Button(self.side_frame, text="每日打卡", width=12, height=2,
@@ -80,6 +94,9 @@ class MainWindow:
         if self.polling_id:
             self.root.after_cancel(self.polling_id)
             self.polling_id = None
+        if self.group_polling_id:
+            self.root.after_cancel(self.group_polling_id)
+            self.group_polling_id = None
 
     def show_home_page(self):
         self.current_page = "home"
@@ -509,6 +526,471 @@ class MainWindow:
 
         self.msg_input.delete(0, tk.END)
         self._refresh_chat_display()
+
+    # ==================== 群聊功能 ====================
+
+    def show_group_page(self):
+        self.current_page = "group"
+        self.clear_main_container()
+
+        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=140)
+        left_box.pack(side="left", fill="y")
+        tk.Label(left_box, text="我的群聊", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=5)
+
+        btn_frame = tk.Frame(left_box, bg="#EEEEEE")
+        btn_frame.pack(fill="x", padx=5, pady=2)
+        tk.Button(btn_frame, text="✚ 创建群", bg=BG_COLOR, relief="flat",
+                  font=FONT_SMALL, command=self._show_create_group_popup).pack(fill="x")
+        tk.Button(btn_frame, text="🔍 加入群", bg=BG_COLOR, relief="flat",
+                  font=FONT_SMALL, command=self._show_join_group_popup).pack(fill="x", pady=(2,0))
+
+        self.group_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
+        self.group_listbox.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.my_groups_data = []  # [{group_id, group_name, ...}]
+        self._refresh_group_list()
+
+        self.group_listbox.bind("<<ListboxSelect>>", self.load_target_group)
+
+        # 右侧群聊天区域
+        chat_area = tk.Frame(self.main_container, bg="white")
+        chat_area.pack(side="right", fill="both", expand=True, padx=5)
+
+        title_frame = tk.Frame(chat_area, bg="white")
+        title_frame.pack(fill="x")
+        self.group_chat_title = tk.Label(title_frame, text="请选择群开始聊天",
+                                         bg="white", font=FONT_TITLE)
+        self.group_chat_title.pack(side="left", pady=10, padx=5)
+        self.group_mgmt_btn = tk.Button(
+            title_frame, text="⚙ 群管理", bg=BG_COLOR, relief="flat",
+            font=FONT_SMALL, command=self._show_group_management_popup
+        )
+        self.group_mgmt_btn.pack(side="right", padx=10)
+        self.group_mgmt_btn.pack_forget()  # 默认隐藏
+
+        self.group_msg_display = scrolledtext.ScrolledText(
+            chat_area, bg=BG_COLOR, fg=TEXT_BLACK,
+            font=FONT_NORMAL, wrap="word", state="disabled")
+        self.group_msg_display.pack(fill="both", expand=True, padx=10, pady=5)
+
+        input_frame = tk.Frame(chat_area, bg="white")
+        input_frame.pack(fill="x", padx=10, pady=10)
+        self.group_msg_input = tk.Entry(input_frame, font=FONT_NORMAL, highlightthickness=1,
+                                        highlightcolor=HEADER_COLOR, highlightbackground=INPUT_BORDER)
+        self.group_msg_input.pack(side="left", fill="x", expand=True, ipady=5)
+        self.group_msg_input.bind("<Return>", lambda e: self.send_group_msg())
+        tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white",
+                  command=self.send_group_msg).pack(side="right", padx=5)
+
+    def _refresh_group_list(self):
+        self.group_listbox.delete(0, tk.END)
+        self.my_groups_data = get_my_groups(self.account)
+        if not self.my_groups_data:
+            self.group_listbox.insert(tk.END, "（暂无群聊）")
+            return
+        for g in self.my_groups_data:
+            display = f"{g['group_name']} ({g['group_id']}) {g['member_count']}人"
+            self.group_listbox.insert(tk.END, display)
+
+    def _show_create_group_popup(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("创建群")
+        pop.geometry("350x180")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text="✚ 创建新群", font=FONT_TITLE,
+                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        tk.Label(pop, text="群名称：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(15, 5))
+        name_var = tk.StringVar()
+        entry = tk.Entry(pop, textvariable=name_var, font=FONT_NORMAL,
+                         highlightthickness=1, highlightcolor=HEADER_COLOR,
+                         highlightbackground=INPUT_BORDER)
+        entry.pack(fill="x", padx=30, ipady=4)
+        entry.focus()
+        entry.bind("<Return>", lambda e: _do_create())
+
+        def _do_create():
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showwarning("提示", "请输入群名称！", parent=pop)
+                return
+            result = create_group(self.account, self.user["nickname"], name)
+            if result:
+                messagebox.showinfo("成功", f"群创建成功！\n群号：{result['group_id']}\n群名：{result['group_name']}", parent=pop)
+                pop.destroy()
+                self._refresh_group_list()
+            else:
+                messagebox.showerror("失败", "群创建失败，请重试", parent=pop)
+
+        tk.Button(pop, text="创建", bg=BTN_COLOR, fg="white",
+                  font=FONT_BTN, command=_do_create).pack(pady=15)
+
+    def _show_join_group_popup(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("加入群")
+        pop.geometry("400x400")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text="🔍 搜索并加入群", font=FONT_TITLE,
+                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        search_frame = tk.Frame(pop, bg=CARD_BG)
+        search_frame.pack(fill="x", padx=20, pady=15)
+
+        tk.Label(search_frame, text="输入群号或群名：", font=FONT_NORMAL).pack(anchor="w")
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var, font=FONT_NORMAL,
+                                highlightthickness=1, highlightcolor=HEADER_COLOR,
+                                highlightbackground=INPUT_BORDER)
+        search_entry.pack(fill="x", ipady=4, pady=5)
+        search_entry.focus()
+
+        result_frame = tk.Frame(pop, bg=BG_COLOR)
+        result_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+
+        result_canvas = tk.Canvas(result_frame, bg=BG_COLOR, highlightthickness=0, height=150)
+        result_scrollbar = tk.Scrollbar(result_frame, orient="vertical", command=result_canvas.yview)
+        result_inner = tk.Frame(result_canvas, bg=BG_COLOR)
+        result_inner.bind("<Configure>", lambda e: result_canvas.configure(
+            scrollregion=result_canvas.bbox("all")))
+        result_canvas.create_window((0, 0), window=result_inner, anchor="nw")
+        result_canvas.configure(yscrollcommand=result_scrollbar.set)
+        result_canvas.pack(side="left", fill="both", expand=True)
+        result_scrollbar.pack(side="right", fill="y")
+
+        def do_search():
+            keyword = search_var.get().strip()
+            if not keyword:
+                return
+            for w in result_inner.winfo_children():
+                w.destroy()
+
+            results = search_groups(keyword)
+            if not results:
+                tk.Label(result_inner, text="未找到匹配的群", bg=BG_COLOR,
+                         fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=20)
+                return
+
+            for g in results:
+                row = tk.Frame(result_inner, bg=CARD_BG, padx=10, pady=5)
+                row.pack(fill="x", pady=3)
+                tk.Label(row, text=f"{g['group_name']} ({g['group_id']}) {g['member_count']}人",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                tk.Button(row, text="申请加入", bg=BTN_COLOR, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=8,
+                          command=lambda gid=g["group_id"], gn=g["group_name"], r=row:
+                            _do_join(gid, gn, r)).pack(side="right")
+
+        def _do_join(group_id, group_name, row_widget):
+            result = send_join_request(self.account, self.user["nickname"], group_id)
+            if result == "ok":
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已发送申请，等待群主审核", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+            elif result == "already_member":
+                messagebox.showinfo("提示", "你已经是该群成员了！", parent=pop)
+            elif result == "already_requested":
+                messagebox.showinfo("提示", "你已经发送过申请了，请等待审核！", parent=pop)
+            else:
+                messagebox.showerror("错误", "群不存在或其他错误", parent=pop)
+
+        search_entry.bind("<Return>", lambda e: do_search())
+        tk.Button(search_frame, text="搜索", bg=BTN_COLOR, fg="white",
+                  font=FONT_BTN, command=do_search).pack(fill="x", ipady=4)
+
+    def _show_group_management_popup(self):
+        if not self.current_group_id:
+            return
+        group_info = get_group_info(self.current_group_id)
+        if not group_info:
+            return
+
+        members = group_info.get("members", [])
+        is_owner = (group_info.get("creator") == self.account)
+        is_admin = is_owner
+        if not is_owner:
+            for m in members:
+                if m["account"] == self.account and m.get("role") == "admin":
+                    is_admin = True
+                    break
+
+        pop = tk.Toplevel(self.root)
+        pop.title(f"群管理 - {group_info['group_name']}")
+        pop.geometry("400x480")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+
+        tk.Label(pop, text=f"📋 {group_info['group_name']} ({self.current_group_id})",
+                 font=FONT_TITLE, bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        info_frame = tk.Frame(pop, bg=CARD_BG, padx=15, pady=10)
+        info_frame.pack(fill="x", padx=15, pady=10)
+        tk.Label(info_frame, text=f"群主：{group_info.get('creator', '')}", bg=CARD_BG,
+                 font=FONT_NORMAL, anchor="w").pack(fill="x")
+        tk.Label(info_frame, text=f"成员：{len(members)} 人", bg=CARD_BG,
+                 font=FONT_NORMAL, anchor="w").pack(fill="x")
+        tk.Label(info_frame, text=f"创建时间：{group_info.get('created_time', '')}", bg=CARD_BG,
+                 font=FONT_NORMAL, anchor="w").pack(fill="x")
+
+        # 入群申请管理
+        tk.Label(pop, text="入群申请", font=("Microsoft YaHei", 11, "bold"),
+                 bg=BG_COLOR).pack(anchor="w", padx=15, pady=(5, 0))
+        pending_frame = tk.Frame(pop, bg=BG_COLOR)
+        pending_frame.pack(fill="x", padx=15, pady=5)
+
+        pending_reqs = get_pending_join_requests(self.current_group_id)
+        if not pending_reqs:
+            tk.Label(pending_frame, text="暂无入群申请", bg=BG_COLOR,
+                     fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=5)
+        else:
+            for req in pending_reqs:
+                row = tk.Frame(pending_frame, bg=CARD_BG, padx=10, pady=5)
+                row.pack(fill="x", pady=3)
+                tk.Label(row, text=f"{req['from_account']} - {req['from_nickname']}",
+                         bg=CARD_BG, font=FONT_NORMAL).pack(side="left")
+                if is_admin:
+                    tk.Button(row, text="同意", bg=ONLINE_GREEN, fg="white",
+                              font=FONT_SMALL, relief="flat", padx=6,
+                              command=lambda a=req["from_account"], n=req["from_nickname"], r=row:
+                                _acc_join(a, n, r)).pack(side="right", padx=2)
+                    tk.Button(row, text="拒绝", bg=LOGOUT_BG, fg="white",
+                              font=FONT_SMALL, relief="flat", padx=6,
+                              command=lambda a=req["from_account"], r=row:
+                                _rej_join(a, r)).pack(side="right", padx=2)
+
+        def _acc_join(from_account, from_nickname, row_widget):
+            ok = accept_join_request(self.current_group_id, from_account, from_nickname, self.account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="✅ 已同意", bg=CARD_BG,
+                         fg=ONLINE_GREEN, font=FONT_SMALL).pack(side="left")
+                self._refresh_group_list()
+            else:
+                messagebox.showerror("操作失败", "同意入群失败，请重试", parent=pop)
+
+        def _rej_join(from_account, row_widget):
+            ok = reject_join_request(self.current_group_id, from_account)
+            if ok:
+                for w in row_widget.winfo_children():
+                    w.destroy()
+                tk.Label(row_widget, text="❌ 已拒绝", bg=CARD_BG,
+                         fg=TEXT_GRAY, font=FONT_SMALL).pack(side="left")
+
+        # 成员列表
+        tk.Label(pop, text="成员列表", font=("Microsoft YaHei", 11, "bold"),
+                 bg=BG_COLOR).pack(anchor="w", padx=15, pady=(10, 0))
+        member_frame = tk.Frame(pop, bg=BG_COLOR)
+        member_frame.pack(fill="both", expand=True, padx=15, pady=5)
+
+        member_canvas = tk.Canvas(member_frame, bg=BG_COLOR, highlightthickness=0, height=120)
+        member_scrollbar = tk.Scrollbar(member_frame, orient="vertical", command=member_canvas.yview)
+        member_inner = tk.Frame(member_canvas, bg=BG_COLOR)
+        member_inner.bind("<Configure>", lambda e: member_canvas.configure(
+            scrollregion=member_canvas.bbox("all")))
+        member_canvas.create_window((0, 0), window=member_inner, anchor="nw")
+        member_canvas.configure(yscrollcommand=member_scrollbar.set)
+        member_canvas.pack(side="left", fill="both", expand=True)
+        member_scrollbar.pack(side="right", fill="y")
+
+        for m in members:
+            role_text = "👑 群主" if m.get("role") == "owner" else ("🛡 管理员" if m.get("role") == "admin" else "成员")
+            row = tk.Frame(member_inner, bg=CARD_BG, padx=10, pady=4)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=f"{m['nickname']} ({m['account']}) [{role_text}]",
+                     bg=CARD_BG, font=FONT_SMALL).pack(side="left")
+            # 群主可踢人/设置管理员
+            if is_owner and m["account"] != self.account:
+                def _kick(target_account, target_nickname):
+                    confirm = messagebox.askyesno("确认踢出",
+                                                  f"确定要将 {target_nickname} 踢出群吗？", parent=pop)
+                    if confirm:
+                        ok = remove_group_member(self.current_group_id, target_account, self.account)
+                        if ok:
+                            messagebox.showinfo("成功", f"已将 {target_nickname} 踢出群", parent=pop)
+                            pop.destroy()
+                            self._refresh_group_list()
+                            if self.current_group_id:
+                                self._refresh_group_chat_display()
+                        else:
+                            messagebox.showerror("失败", "踢出操作失败", parent=pop)
+
+                tk.Button(row, text="踢出", bg=LOGOUT_BG, fg="white",
+                          font=FONT_SMALL, relief="flat", padx=4,
+                          command=lambda a=m["account"], n=m["nickname"]: _kick(a, n)).pack(side="right", padx=2)
+
+                def _toggle_admin(target_account, target_nickname, current_role):
+                    new_role = "admin" if current_role == "member" else "member"
+                    action = "设置管理员" if new_role == "admin" else "取消管理员"
+                    confirm = messagebox.askyesno("确认操作",
+                                                  f"确定要{action} {target_nickname} 吗？", parent=pop)
+                    if confirm:
+                        from group_db import assign_admin
+                        ok = assign_admin(self.current_group_id, target_account, self.account)
+                        if ok:
+                            messagebox.showinfo("成功", f"已{action} {target_nickname}", parent=pop)
+                            pop.destroy()
+                        else:
+                            messagebox.showerror("失败", f"{action}失败", parent=pop)
+
+                if m.get("role") in ("member", "admin"):
+                    btn_text = "取消管理" if m.get("role") == "admin" else "设为管理"
+                    tk.Button(row, text=btn_text, bg=BTN_COLOR, fg="white",
+                              font=FONT_SMALL, relief="flat", padx=4,
+                              command=lambda a=m["account"], n=m["nickname"], r=m.get("role"):
+                                _toggle_admin(a, n, r)).pack(side="right", padx=2)
+
+        # 群主可解散群 / 转让群主
+        if is_owner:
+            op_frame = tk.Frame(pop, bg=BG_COLOR)
+            op_frame.pack(fill="x", padx=15, pady=10)
+            tk.Button(op_frame, text="🗑 解散群", bg=LOGOUT_BG, fg="white",
+                      font=FONT_BTN, command=self._do_disband_group).pack(side="left", padx=5)
+            tk.Button(op_frame, text="🔁 转让群主", bg=HEADER_COLOR, fg="white",
+                      font=FONT_BTN, command=lambda: self._do_transfer_owner(pop)).pack(side="right", padx=5)
+
+    def _do_disband_group(self):
+        if not self.current_group_id:
+            return
+        confirm = messagebox.askyesno("确认解散", "确定要解散当前群吗？\n此操作不可恢复！")
+        if confirm:
+            ok = disband_group(self.current_group_id, self.account)
+            if ok:
+                messagebox.showinfo("成功", "群已解散")
+                self.current_group_id = None
+                self.current_group_name = None
+                self._refresh_group_list()
+                self.show_group_page()
+            else:
+                messagebox.showerror("失败", "解散失败，只有群主可以解散群")
+
+    def _do_transfer_owner(self, parent_pop):
+        if not self.current_group_id:
+            return
+        members = get_group_members(self.current_group_id)
+        members = [m for m in members if m["account"] != self.account]
+        if not members:
+            messagebox.showinfo("提示", "群内没有其他成员可以转让", parent=parent_pop)
+            return
+
+        trans_pop = tk.Toplevel(self.root)
+        trans_pop.title("转让群主")
+        trans_pop.geometry("300x300")
+        trans_pop.transient(self.root)
+        trans_pop.grab_set()
+        trans_pop.resizable(False, False)
+
+        tk.Label(trans_pop, text="选择新群主", font=FONT_TITLE,
+                 bg=HEADER_COLOR, fg="white").pack(fill="x", ipady=10)
+
+        listbox = tk.Listbox(trans_pop, font=FONT_NORMAL)
+        listbox.pack(fill="both", expand=True, padx=20, pady=15)
+
+        for m in members:
+            listbox.insert(tk.END, f"{m['nickname']} ({m['account']})")
+
+        def do_transfer():
+            sel = listbox.curselection()
+            if not sel:
+                messagebox.showwarning("提示", "请选择新群主", parent=trans_pop)
+                return
+            idx = sel[0]
+            target_account = members[idx]["account"]
+            confirm = messagebox.askyesno("确认转让", f"确定将群主转让给 {members[idx]['nickname']} 吗？")
+            if confirm:
+                from group_db import transfer_owner
+                ok = transfer_owner(self.current_group_id, target_account, self.account)
+                if ok:
+                    messagebox.showinfo("成功", "群主转让成功")
+                    trans_pop.destroy()
+                    parent_pop.destroy()
+                    self._refresh_group_list()
+                else:
+                    messagebox.showerror("失败", "转让失败，请重试")
+
+        tk.Button(trans_pop, text="确认转让", bg=BTN_COLOR, fg="white",
+                  font=FONT_BTN, command=do_transfer).pack(pady=10)
+
+    def load_target_group(self, event):
+        sel = self.group_listbox.curselection()
+        if not sel:
+            return
+        if not self.my_groups_data:
+            return
+        idx = sel[0]
+        if idx >= len(self.my_groups_data):
+            return
+        group_info = self.my_groups_data[idx]
+        self.current_group_id = group_info["group_id"]
+        self.current_group_name = group_info["group_name"]
+        self.group_chat_title.config(text=f"💬 {group_info['group_name']} ({group_info['group_id']})")
+
+        # 显示群管理按钮
+        self.group_mgmt_btn.pack(side="right", padx=10)
+
+        self._refresh_group_chat_display()
+        self._start_group_polling()
+
+    def _refresh_group_chat_display(self):
+        if not self.current_group_id:
+            return
+        messages = load_group_conversation(self.current_group_id)
+        self.group_last_msg_count = len(messages)
+
+        self.group_msg_display.config(state="normal")
+        self.group_msg_display.delete(1.0, tk.END)
+
+        self.group_msg_display.insert(tk.END, f"--- {self.current_group_name} 群聊 ---\n")
+        self.group_msg_display.insert(tk.END, "\n")
+
+        for msg in messages:
+            sender = msg.get("sender_nickname", msg.get("sender_account", "未知"))
+            send_time = msg.get("time", "")
+            content = msg.get("content", "")
+            self.group_msg_display.insert(tk.END, f"[{send_time}] {sender}：{content}\n")
+
+        self.group_msg_display.config(state="disabled")
+        self.group_msg_display.see(tk.END)
+
+    def _start_group_polling(self):
+        if self.group_polling_id:
+            self.root.after_cancel(self.group_polling_id)
+            self.group_polling_id = None
+
+        def poll():
+            if self.current_page != "group" or not self.current_group_id:
+                return
+            messages = load_group_conversation(self.current_group_id)
+            if len(messages) != self.group_last_msg_count:
+                self._refresh_group_chat_display()
+            self.group_polling_id = self.root.after(2000, poll)
+
+        self.group_polling_id = self.root.after(2000, poll)
+
+    def send_group_msg(self):
+        if not self.current_group_id:
+            messagebox.showwarning("提示", "请先选择一个群！")
+            return
+        text = self.group_msg_input.get().strip()
+        if not text:
+            return
+
+        send_group_message(
+            sender_account=self.account,
+            sender_nickname=self.user["nickname"],
+            group_id=self.current_group_id,
+            content=text,
+        )
+
+        self.group_msg_input.delete(0, tk.END)
+        self._refresh_group_chat_display()
 
     def edit_profile_pop(self):
         pop = tk.Toplevel(self.root)
@@ -990,6 +1472,9 @@ class MainWindow:
             if self.polling_id:
                 self.root.after_cancel(self.polling_id)
                 self.polling_id = None
+            if self.group_polling_id:
+                self.root.after_cancel(self.group_polling_id)
+                self.group_polling_id = None
             self._stop_level_timer()
             self.root.destroy()
             from login_window import run_login_window

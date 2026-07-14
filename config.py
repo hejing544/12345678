@@ -42,6 +42,8 @@ MOMENTS_FILE = "moments.json"
 CHECKIN_FILE = "checkin_data.json"
 MOMENTS_VIDEOS_DIR = "moments_videos"
 MOMENTS_PHOTOS_DIR = "moments_photos"
+GROUP_FILE = "groups_data.json"
+GROUP_CHAT_FILE = "group_chat.json"
 
 # ====================== 默认用户（bcrypt 哈希，仅供首次运行） ======================
 DEFAULT_USERS = {
