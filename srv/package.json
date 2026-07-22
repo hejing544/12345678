@@ -1,0 +1,23 @@
+{
+  "name": "qq-server",
+  "version": "1.0.0",
+  "description": "QQ 服务端 — 用户管理 + 管理面板",
+  "scripts": {
+    "dev": "concurrently \"node server.js\" \"vite\"",
+    "dev:server": "node server.js",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.3",
+    "concurrently": "^8.2.2",
+    "vite": "^5.1.4"
+  }
+}
